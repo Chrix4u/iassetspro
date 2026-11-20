@@ -26,12 +26,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    // Production scheduling/order screens need read-only work center choices.
+    if (!isAdmin(session) && !hasPermission(session, 'work_centers.view') && !hasPermission(session, 'production.view')) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const type = searchParams.get('type');
-    const search = searchParams.get('search');
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    const search = searchParams.get('search')?.trim().slice(0, 150);
+    const requestedPage = Number(searchParams.get('page') || 1);
+    const requestedLimit = Number(searchParams.get('limit') || 50);
+    // A malformed or huge page/limit must not cause a DB error or an unbounded query.
+    const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const limit = Number.isSafeInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 1000) : 50;
 
     const where: Record<string, unknown> = { isActive: true };
 
@@ -109,12 +118,17 @@ export async function POST(request: NextRequest) {
       capacityUnit,
     } = body;
 
-    if (!name) {
+    if (typeof name !== 'string' || !name.trim()) {
       return NextResponse.json({ success: false, error: 'Work center name is required' }, { status: 400 });
     }
-
-    if (!type) {
-      return NextResponse.json({ success: false, error: 'Type is required' }, { status: 400 });
+    if (name.trim().length > 200) {
+      return NextResponse.json({ success: false, error: 'Work center name is too long' }, { status: 400 });
+    }
+    if (!['production', 'assembly', 'packaging', 'testing'].includes(type)) {
+      return NextResponse.json({ success: false, error: 'Invalid work center type' }, { status: 400 });
+    }
+    if (status !== undefined && !['active', 'inactive', 'maintenance'].includes(status)) {
+      return NextResponse.json({ success: false, error: 'Invalid work center status' }, { status: 400 });
     }
 
     const numericCapacity = capacity == null || capacity === '' ? null : Number(capacity);
@@ -127,13 +141,13 @@ export async function POST(request: NextRequest) {
     const workCenter = await db.workCenter.create({
       data: {
         code,
-        name,
-        description: description || null,
+        name: name.trim(),
+        description: typeof description === 'string' ? description.trim() || null : null,
         type,
         status: status || 'active',
-        location: location || null,
+        location: typeof location === 'string' ? location.trim() || null : null,
         capacity: numericCapacity,
-        capacityUnit: capacityUnit || 'units/hour',
+        capacityUnit: typeof capacityUnit === 'string' && capacityUnit.trim() ? capacityUnit.trim() : 'units/hour',
         createdById: session.userId,
       },
     });

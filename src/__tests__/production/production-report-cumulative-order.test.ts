@@ -59,6 +59,40 @@ describe('production reports chronological cumulative totals', () => {
     }]);
   });
 
+  it('does not let a legacy approved record hide an unreported scheduled shift', async () => {
+    mocks.recordFindMany.mockResolvedValue([{ ...record(10, 7), planId: null }]);
+    mocks.planFindMany.mockResolvedValue([plan(10), plan(11)]);
+    mocks.recordGroupBy.mockResolvedValue([]);
+    const response = await GET(new NextRequest(
+      'http://localhost/api/production-surveys/report?group=day&from=2026-11-10&to=2026-11-11',
+    ));
+    expect(response.status).toBe(200);
+    const { data } = await response.json() as { data: Array<{
+      period: string; shifts: number; output: number; plannedShifts: number; unapprovedOrMissingShifts: number;
+    }> };
+    expect(data.map(x => [x.period, x.shifts, x.output, x.plannedShifts, x.unapprovedOrMissingShifts])).toEqual([
+      ['2026-11-10', 1, 7, 1, 1],
+      ['2026-11-11', 0, 0, 1, 1],
+    ]);
+  });
+
+  it('counts approved records against their actual scheduled plan', async () => {
+    mocks.recordFindMany.mockResolvedValue([{ ...record(10, 7), planId: 'plan-10' }]);
+    mocks.planFindMany.mockResolvedValue([plan(10), plan(11)]);
+    mocks.recordGroupBy.mockResolvedValue([]);
+    const response = await GET(new NextRequest(
+      'http://localhost/api/production-surveys/report?group=day&from=2026-11-10&to=2026-11-11',
+    ));
+    expect(response.status).toBe(200);
+    const { data } = await response.json() as { data: Array<{
+      period: string; plannedShifts: number; unapprovedOrMissingShifts: number;
+    }> };
+    expect(data.map(x => [x.period, x.plannedShifts, x.unapprovedOrMissingShifts])).toEqual([
+      ['2026-11-10', 1, 0],
+      ['2026-11-11', 1, 1],
+    ]);
+  });
+
   it('sorts legacy approved shifts before newer planned periods for all-time cumulative production', async () => {
     const request = new NextRequest(
       'http://localhost/api/production-surveys/report?group=day&from=2026-11-09&to=2026-11-11',

@@ -62,7 +62,7 @@ describe('production output to meter PM progress', () => {
     expect(taskEngine).toContain('nextDueReading');
     expect(legacyEngine).toContain('tx.meterReading.findFirst');
     expect(legacyEngine).toContain('baselineValue');
-    expect(api).toContain('task.assetMeterId ? Number(meter.currentValue) : reading ? Number(reading.value) : null');
+    expect(api).toContain('meter.lastReadingAt ? Number(meter.currentValue) : null');
     expect(api).toContain('const current = latest ? Number(latest.value) : null');
     expect(api).toContain('Number(baseline) + interval');
   });

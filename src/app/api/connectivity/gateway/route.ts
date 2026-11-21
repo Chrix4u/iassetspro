@@ -43,8 +43,43 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
-    const body = await request.json();
-    const gateway = await edgeGatewayService.registerGateway(body);
+    // Registration is a privileged plant mutation. Neither the creator identity
+    // nor the target plant may be widened by a caller-supplied JSON payload.
+    const scope = await getPlantScope(request, session);
+    if (scope.denyAccess) {
+      return NextResponse.json({ error: 'Plant access denied' }, { status: 403 });
+    }
+    const raw = await request.json() as unknown;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return NextResponse.json({ error: 'Gateway registration details are required' }, { status: 400 });
+    }
+    const body = raw as Record<string, unknown>;
+    if (typeof body.name !== 'string' || !body.name.trim() ||
+        typeof body.gatewayCode !== 'string' || !body.gatewayCode.trim()) {
+      return NextResponse.json({ error: 'Gateway name and code are required' }, { status: 400 });
+    }
+    if (body.plantId != null && typeof body.plantId !== 'string') {
+      return NextResponse.json({ error: 'Plant ID must be a string' }, { status: 400 });
+    }
+    const requestedPlant = typeof body.plantId === 'string' ? body.plantId.trim() || null : null;
+    if ((scope.isScoped && (!scope.plantId || (requestedPlant && requestedPlant !== scope.plantId))) ||
+        (!scope.isScoped && !scope.isSystemWide &&
+          (!requestedPlant || !scope.accessiblePlantIds.includes(requestedPlant)))) {
+      return NextResponse.json({ error: 'Plant access denied' }, { status: 403 });
+    }
+    const plantId = scope.isScoped ? scope.plantId! : requestedPlant;
+    const gateway = await edgeGatewayService.registerGateway({
+      name: body.name.trim(),
+      gatewayCode: body.gatewayCode.trim(),
+      plantId: plantId ?? undefined,
+      ipAddress: typeof body.ipAddress === 'string' ? body.ipAddress : undefined,
+      firmwareVersion: typeof body.firmwareVersion === 'string' ? body.firmwareVersion : undefined,
+      capabilities: Array.isArray(body.capabilities)
+        ? body.capabilities.filter((entry): entry is string => typeof entry === 'string')
+        : undefined,
+      config: body.config as Record<string, unknown> | undefined,
+      createdById: session.userId,
+    });
     return NextResponse.json({ data: gateway }, { status: 201 });
   } catch (error) {
     log.error('Failed to register gateway', error as Error);

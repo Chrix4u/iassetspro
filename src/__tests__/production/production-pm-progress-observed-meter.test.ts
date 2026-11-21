@@ -48,7 +48,7 @@ const fetchProgress = async () => {
   const result = await GET(new NextRequest('http://localhost/api/production-surveys/pm-progress?assetId=asset-1'));
   expect(result.status).toBe(200);
   return (await result.json()).data.thresholds[0] as {
-    state: string; currentValue: number | null; remaining: number | null; meterId: string | null; nextDueReading: number;
+    state: string; currentValue: number | null; remaining: number | null; meterId: string | null; nextDueReading: number; readingSource?: string;
   };
 };
 
@@ -128,6 +128,62 @@ describe('PM threshold presentation matches engine observation gates', () => {
     expect(await fetchProgress()).toMatchObject({
       state: 'due', currentValue: 6400, nextDueReading: 6000, meterId: null,
     });
+  });
+
+  const componentHourSchedule = (hours: number | null, baseline: number | undefined = 480) => ({
+    id: 'schedule-500h', title: 'Drive motor 500-hour service', frequencyType: 'meter_based',
+    autoGenerateWO: true, frequencyValue: 500, frequencyUnit: null, meterName: null,
+    component: { id: 'component-1', name: 'Drive motor', assetId: 'asset-1', operatingHours: hours },
+    trigger: {
+      isActive: true, triggerType: 'meter', triggerValue: 500,
+      triggerConfig: JSON.stringify({
+        source: 'component_operating_hours', componentId: 'component-1',
+        ...(Number.isNaN(baseline) ? {} : { baselineHours: baseline }), unit: 'hours',
+      }),
+    },
+  });
+
+  it('shows a legacy component-hour PM schedule at the correct baseline and next threshold', async () => {
+    mocks.findMeters.mockResolvedValue([]);
+    mocks.findTasks.mockResolvedValue([]);
+    mocks.findSchedules.mockResolvedValue([componentHourSchedule(480)]);
+    expect(await fetchProgress()).toMatchObject({
+      state: 'upcoming', currentValue: 480, remaining: 500,
+      nextDueReading: 980, meterId: null, readingSource: 'component_operating_hours',
+    });
+    expect(mocks.findLatestReading).not.toHaveBeenCalled();
+  });
+
+  it('identifies a reached legacy component-hour PM threshold without changing a meter', async () => {
+    mocks.findMeters.mockResolvedValue([]);
+    mocks.findTasks.mockResolvedValue([]);
+    mocks.findSchedules.mockResolvedValue([componentHourSchedule(980)]);
+    expect(await fetchProgress()).toMatchObject({
+      state: 'due', currentValue: 980, remaining: 0,
+      nextDueReading: 980, readingSource: 'component_operating_hours',
+    });
+    expect(mocks.findLatestReading).not.toHaveBeenCalled();
+  });
+
+  it('does not fabricate a component-hour PM baseline before it is configured', async () => {
+    mocks.findMeters.mockResolvedValue([]);
+    mocks.findTasks.mockResolvedValue([]);
+    mocks.findSchedules.mockResolvedValue([componentHourSchedule(480, Number.NaN)]);
+    const response = await GET(new NextRequest('http://localhost/api/production-surveys/pm-progress?assetId=asset-1'));
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.thresholds).toHaveLength(0);
+  });
+
+  it('ignores orphaned legacy components instead of pretending they have runtime readings', async () => {
+    mocks.findMeters.mockResolvedValue([]);
+    mocks.findTasks.mockResolvedValue([]);
+    mocks.findSchedules.mockResolvedValue([{
+      ...componentHourSchedule(480),
+      component: { id: 'elsewhere', name: 'Wrong plant motor', assetId: 'asset-other', operatingHours: 980 },
+    }]);
+    const response = await GET(new NextRequest('http://localhost/api/production-surveys/pm-progress?assetId=asset-1'));
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.thresholds).toHaveLength(0);
   });
 
   it('preserves historical unlinked PM tasks with a real meter-reading baseline', async () => {

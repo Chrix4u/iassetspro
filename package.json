@@ -120,7 +120,7 @@
     "eslint-config-next": "^16.1.3",
     "jsdom": "^29.1.1",
     "prisma": "^7.8.0",
-    "source-map": "^0.7.6",
+    "source-map": "^0.8.0",
     "tailwindcss": "^4",
     "tsx": "^4.21.0",
     "tw-animate-css": "^1.3.5",

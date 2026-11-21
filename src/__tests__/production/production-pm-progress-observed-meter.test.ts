@@ -48,7 +48,7 @@ const fetchProgress = async () => {
   const result = await GET(new NextRequest('http://localhost/api/production-surveys/pm-progress?assetId=asset-1'));
   expect(result.status).toBe(200);
   return (await result.json()).data.thresholds[0] as {
-    state: string; currentValue: number | null; remaining: number | null;
+    state: string; currentValue: number | null; remaining: number | null; meterId: string | null; nextDueReading: number;
   };
 };
 
@@ -79,6 +79,54 @@ describe('PM threshold presentation matches engine observation gates', () => {
     mocks.findMeters.mockResolvedValue([meter(observedAt, 0)]);
     expect(await fetchProgress()).toMatchObject({
       state: 'upcoming', currentValue: 0, remaining: 5000,
+    });
+  });
+
+  it('shows historical unlinked PM tasks without an active meter registration', async () => {
+    mocks.findMeters.mockResolvedValue([]);
+    mocks.findTasks.mockResolvedValue([task(null)]);
+    mocks.findLatestReading.mockResolvedValue({ value: 2700, readingDate: observedAt });
+    expect(await fetchProgress()).toMatchObject({
+      state: 'upcoming', currentValue: 2700, remaining: 2300, meterId: null,
+    });
+    expect(mocks.findLatestReading).toHaveBeenCalledWith(expect.objectContaining({
+      where: { assetId: 'asset-1', meterName: 'Gross output', unit: 'yards' },
+    }));
+  });
+
+  it('shows an unregistered legacy task as awaiting reading instead of hiding it', async () => {
+    mocks.findMeters.mockResolvedValue([]);
+    mocks.findTasks.mockResolvedValue([task(null)]);
+    expect(await fetchProgress()).toMatchObject({
+      state: 'awaiting_reading', currentValue: null, remaining: null, meterId: null,
+    });
+  });
+
+  it('does not confuse a missing linked meter with an unlinked historical task', async () => {
+    mocks.findMeters.mockResolvedValue([]);
+    const response = await GET(new NextRequest('http://localhost/api/production-surveys/pm-progress?assetId=asset-1'));
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.thresholds).toHaveLength(0);
+    expect(mocks.findLatestReading).not.toHaveBeenCalled();
+  });
+
+  it('shows a historical schedule threshold when only legacy readings exist', async () => {
+    mocks.findMeters.mockResolvedValue([]);
+    mocks.findTasks.mockResolvedValue([]);
+    mocks.findSchedules.mockResolvedValue([{
+      id: 'schedule-legacy', title: 'Legacy output schedule', autoGenerateWO: true,
+      frequencyValue: 5000, frequencyUnit: 'yards', meterName: 'Gross output',
+      trigger: {
+        isActive: true, triggerType: 'meter', triggerValue: 5000,
+        triggerConfig: JSON.stringify({
+          source: 'asset_meter_reading', meterName: 'Gross output',
+          unit: 'yards', baselineValue: 1000,
+        }),
+      },
+    }]);
+    mocks.findLatestReading.mockResolvedValue({ value: 6400, readingDate: observedAt });
+    expect(await fetchProgress()).toMatchObject({
+      state: 'due', currentValue: 6400, nextDueReading: 6000, meterId: null,
     });
   });
 

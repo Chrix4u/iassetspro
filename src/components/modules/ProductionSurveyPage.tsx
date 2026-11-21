@@ -36,7 +36,7 @@ type Row = {
 };
 type PmThreshold = {
  id:string; source:'task'|'schedule'; description:string; scheduleTitle:string|null;
- meterId:string; meterName:string; unit:string;
+ meterId:string|null; meterName:string; unit:string;
  autoGenerateWO:boolean; state:'due'|'approaching'|'upcoming'|'awaiting_reading';
  currentValue:number|null; nextDueReading:number; remaining:number|null; progressPercent:number|null;
 };
@@ -384,27 +384,27 @@ export default function ProductionSurveyPage(){
    {assetId&&setup?.asset.id===assetId&&<div data-testid="production-pm-progress">
      <Card><CardHeader><div className="flex flex-wrap items-center justify-between gap-2">
        <div><CardTitle className="flex items-center gap-2 text-base"><Gauge className="h-4 w-4"/>Approved production & runtime → PM thresholds</CardTitle>
-       <CardDescription>Read-only status from your registered machine meters. Recalculates after a manager approves a shift.</CardDescription></div>
+       <CardDescription>Read-only status from registered meters and historical PM readings. Recalculates after shift approval.</CardDescription></div>
        <Button size="sm" variant="outline" disabled={pmProgressLoading} onClick={()=>void loadPmProgress()}><RefreshCw className="mr-1 h-4 w-4"/>Refresh usage</Button>
      </div></CardHeader>
      <CardContent className="space-y-3">
        {pmProgressError&&<p role="alert" className="text-sm text-destructive">{pmProgressError}</p>}
        {!pmProgressError&&pmProgressLoading&&!pmProgress&&<p className="text-sm text-muted-foreground">Loading maintenance meter thresholds…</p>}
-       {pmProgress?.meters.length===0&&<p className="text-sm text-muted-foreground">No production-output or operating-hour meter registered. Engineers can create either meter under Assets → Meters.</p>}
+       {pmProgress?.meters.length===0&&<p className="text-sm text-muted-foreground">No active production-output or operating-hour meter registered. Engineers can create one under Assets → Meters. Historical PM readings may still appear below.</p>}
        {pmProgress&&pmProgress.meters.length>0&&pmProgress.thresholds.length===0&&
          <p className="text-sm text-muted-foreground">Registered output/runtime meters have no active usage-based PM threshold linked. A maintenance planner can assign a meter-based task or schedule using these machine meters.</p>}
        {pmProgress&&pmProgress.thresholds.length>0&&<div className="grid gap-3 sm:grid-cols-2">
          {pmProgress.thresholds.map(item=><div key={item.source+':'+item.id} className="min-w-0 rounded-lg border p-3 space-y-2" data-testid="production-pm-threshold">
            <div className="flex flex-wrap items-start justify-between gap-2">
              <div className="min-w-0"><p className="font-semibold text-sm break-words">{item.description}</p>
-               <p className="text-xs text-muted-foreground">{item.source==='task'?'PM task':'Machine PM schedule'} · {item.meterName} ({item.unit})</p></div>
+               <p className="text-xs text-muted-foreground">{item.source==='task'?'PM task':'Machine PM schedule'} · {item.meterName} ({item.unit}){item.meterId===null?' · Historical meter reading':''}</p></div>
              <Badge variant={item.state==='due'?'destructive':item.state==='approaching'?'outline':'secondary'}>
                {item.state==='due'?'Threshold reached':item.state==='approaching'?'Approaching due':
                  item.state==='awaiting_reading'?'Awaiting reading':'Upcoming'}
              </Badge>
            </div>
            <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs">
-             <span>Approved meter: <strong>{item.currentValue===null?'No reading':amount(item.currentValue)+' '+item.unit}</strong></span>
+             <span>Recorded meter: <strong>{item.currentValue===null?'No reading':amount(item.currentValue)+' '+item.unit}</strong></span>
              <span>Next threshold: <strong>{amount(item.nextDueReading)} {item.unit}</strong></span>
            </div>
            {item.progressPercent!==null&&<div className="h-2 rounded-full bg-muted overflow-hidden" role="progressbar"

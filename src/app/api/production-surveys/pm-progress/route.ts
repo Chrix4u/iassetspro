@@ -59,7 +59,6 @@ export async function GET(request: NextRequest) {
       }, { status: 422 });
     }
     const meters = registeredMeters.filter((meter) => allowedProductionMeter(meter.meterType) || allowedRuntimeMeter(meter.meterType,meter.unit));
-    const meterKeys = new Set(meters.map(meter => meter.name + '\u0000' + meter.unit));
     const readings = await Promise.all(meters.map(async meter => {
       const reading = await db.meterReading.findFirst({
         where: { assetId, meterName: meter.name, unit: meter.unit },
@@ -70,6 +69,23 @@ export async function GET(request: NextRequest) {
     }));
     const latestByMeterId = new Map(readings.map(entry => [entry.meterId, entry.reading]));
     const getMeter = (name: string, unit: string) => meters.find(meter => meter.name === name && meter.unit === unit);
+    // Historical unlinked PM plans use recorded (asset, name, unit) readings even
+    // if no active AssetMeter registration exists. Reuse their exact engine source
+    // instead of silently hiding those plans from this read-only panel.
+    const legacyReadings = new Map<string, Promise<{ value: number; readingDate: Date } | null>>();
+    const latestLegacyReading = (name: string, unit: string) => {
+      const key = name + '\u0000' + unit;
+      let query = legacyReadings.get(key);
+      if (!query) {
+        query = db.meterReading.findFirst({
+          where: { assetId, meterName: name, unit },
+          orderBy: [{ readingDate: 'desc' }, { createdAt: 'desc' }],
+          select: { value: true, readingDate: true },
+        });
+        legacyReadings.set(key, query);
+      }
+      return query;
+    };
     const rows: Array<Record<string, unknown>> = [];
     for (const task of taskAssignments) {
       if (task.schedule && (!task.schedule.isActive || task.schedule.recurrenceAuthority !== 'task')) continue;
@@ -77,15 +93,19 @@ export async function GET(request: NextRequest) {
       const meter = task.assetMeterId
         ? meters.find(m => m.id === task.assetMeterId && m.name === task.meterName && m.unit === task.frequencyUnit)
         : getMeter(task.meterName, task.frequencyUnit);
-      if (!meter || !meterKeys.has(task.meterName + '\u0000' + task.frequencyUnit)) continue;
+      // Linked plans require their exact active registered meter. Unlinked
+      // historical plans remain valid when only a MeterReading survives.
+      if (task.assetMeterId && !meter) continue;
       // The assignment engine reads currentValue for an explicitly linked AssetMeter;
       // legacy unlinked UBM tasks read the most recent MeterReading instead.
-      const reading = latestByMeterId.get(meter.id);
+      const reading = meter
+        ? latestByMeterId.get(meter.id)
+        : await latestLegacyReading(task.meterName, task.frequencyUnit);
       // The due engine ignores an unobserved registered meter even when its
       // default currentValue is zero. The dashboard must not imply that the
       // production counter has been measured before the first reading.
       const current = task.assetMeterId
-        ? (meter.lastReadingAt ? Number(meter.currentValue) : null)
+        ? (meter?.lastReadingAt ? Number(meter.currentValue) : null)
         : (reading ? Number(reading.value) : null);
       const progress = calculateProductionPmProgress({
         current, nextDue: Number(task.nextDueReading), interval: task.frequencyInterval === null ? null : Number(task.frequencyInterval),
@@ -94,7 +114,7 @@ export async function GET(request: NextRequest) {
         id: task.id, source: 'task', description: task.pmTask.description,
         scheduleTitle: task.schedule?.title ?? null,
         autoGenerateWO: task.schedule?.autoGenerateWO ?? false,
-        meterId: meter.id, meterName: meter.name, unit: meter.unit,
+        meterId: meter?.id ?? null, meterName: task.meterName, unit: task.frequencyUnit,
         ...progress,
       });
     }
@@ -109,12 +129,13 @@ export async function GET(request: NextRequest) {
       const meterName = typeof config.meterName === 'string' ? config.meterName : schedule.meterName || '';
       const unit = typeof config.unit === 'string' ? config.unit : schedule.frequencyUnit || '';
       const meter = getMeter(meterName, unit);
-      if (!meter) continue;
       const interval = Number(schedule.trigger.triggerValue || schedule.frequencyValue);
       const baseline = config.baselineValue;
       if (!(Number.isFinite(interval) && interval > 0)) continue;
       if (baseline === null || baseline === undefined || !Number.isFinite(Number(baseline))) continue;
-      const latest = latestByMeterId.get(meter.id);
+      const latest = meter
+        ? latestByMeterId.get(meter.id)
+        : await latestLegacyReading(meterName, unit);
       const current = latest ? Number(latest.value) : null;
       const progress = calculateProductionPmProgress({
         current, nextDue: Number(baseline) + interval, interval,
@@ -122,7 +143,7 @@ export async function GET(request: NextRequest) {
       rows.push({
         id: schedule.id, source: 'schedule', description: schedule.title, scheduleTitle: schedule.title,
         autoGenerateWO: schedule.autoGenerateWO,
-        meterId: meter.id, meterName: meter.name, unit: meter.unit,
+        meterId: meter?.id ?? null, meterName, unit,
         ...progress,
       });
     }

@@ -81,7 +81,12 @@ export async function GET(request: NextRequest) {
       // The assignment engine reads currentValue for an explicitly linked AssetMeter;
       // legacy unlinked UBM tasks read the most recent MeterReading instead.
       const reading = latestByMeterId.get(meter.id);
-      const current = task.assetMeterId ? Number(meter.currentValue) : reading ? Number(reading.value) : null;
+      // The due engine ignores an unobserved registered meter even when its
+      // default currentValue is zero. The dashboard must not imply that the
+      // production counter has been measured before the first reading.
+      const current = task.assetMeterId
+        ? (meter.lastReadingAt ? Number(meter.currentValue) : null)
+        : (reading ? Number(reading.value) : null);
       const progress = calculateProductionPmProgress({
         current, nextDue: Number(task.nextDueReading), interval: task.frequencyInterval === null ? null : Number(task.frequencyInterval),
       });

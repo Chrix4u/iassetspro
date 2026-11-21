@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { AsyncSearchableSelect, type SearchableOption } from '@/components/ui/searchable-select';
 import { Badge } from '@/components/ui/badge';
-import { formatUiDate } from '@/lib/date-display';
+import { formatProductionPeriodLabel } from '@/lib/production-period-display';
 import { getWorkbookBenchmark } from '@/lib/production-survey-workbook-benchmarks';
 import { ClipboardCheck, Factory, Gauge, Plus, RefreshCw, Download } from 'lucide-react';
 
@@ -71,11 +71,7 @@ const csvValue=(value:unknown)=>{
  const safe=/^[=+@-]/.test(text)?"'"+text:text;
  return '"'+safe.replace(/"/g,'""')+'"';
 };
-function dayLabel(value:string) {
- const date=value.slice(0,10);
- if(!/^\d{4}-\d{2}-\d{2}$/.test(date))return value;
- return formatUiDate(new Date(date+'T00:00:00.000Z'));
-}
+const dayLabel=formatProductionPeriodLabel;
 const amount=(number:number)=>number.toLocaleString('en-GH',{maximumFractionDigits:2});
 const pct=(number:number|null)=>number==null?'—':number.toFixed(1)+'%';
 

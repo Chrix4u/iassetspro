@@ -186,6 +186,23 @@ describe('PM threshold presentation matches engine observation gates', () => {
     expect((await response.json()).data.thresholds).toHaveLength(0);
   });
 
+  it('does not mislabel an incompatible legacy trigger source as component hours', async () => {
+    mocks.findMeters.mockResolvedValue([]);
+    mocks.findTasks.mockResolvedValue([]);
+    const legacy = componentHourSchedule(980);
+    mocks.findSchedules.mockResolvedValue([{
+      ...legacy,
+      trigger: {
+        ...legacy.trigger,
+        triggerConfig: JSON.stringify({ source: 'asset_meter_reading', baselineHours: 480 }),
+      },
+    }]);
+    const response = await GET(new NextRequest('http://localhost/api/production-surveys/pm-progress?assetId=asset-1'));
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.thresholds).toHaveLength(0);
+    expect(mocks.findLatestReading).not.toHaveBeenCalled();
+  });
+
   it('preserves historical unlinked PM tasks with a real meter-reading baseline', async () => {
     mocks.findTasks.mockResolvedValue([task(null)]);
     mocks.findLatestReading.mockResolvedValue({ value: 2700, readingDate: observedAt });

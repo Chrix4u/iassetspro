@@ -36,7 +36,7 @@ type Row = {
 };
 type PmThreshold = {
  id:string; source:'task'|'schedule'; description:string; scheduleTitle:string|null;
- meterId:string|null; meterName:string; unit:string;
+ meterId:string|null; meterName:string; unit:string; readingSource?:'component_operating_hours';
  autoGenerateWO:boolean; state:'due'|'approaching'|'upcoming'|'awaiting_reading';
  currentValue:number|null; nextDueReading:number; remaining:number|null; progressPercent:number|null;
 };
@@ -393,14 +393,14 @@ export default function ProductionSurveyPage(){
          {pmProgress.thresholds.map(item=><div key={item.source+':'+item.id} className="min-w-0 rounded-lg border p-3 space-y-2" data-testid="production-pm-threshold">
            <div className="flex flex-wrap items-start justify-between gap-2">
              <div className="min-w-0"><p className="font-semibold text-sm break-words">{item.description}</p>
-               <p className="text-xs text-muted-foreground">{item.source==='task'?'PM task':'Machine PM schedule'} · {item.meterName} ({item.unit}){item.meterId===null?' · Historical meter reading':''}</p></div>
+               <p className="text-xs text-muted-foreground">{item.source==='task'?'PM task':'Machine PM schedule'} · {item.meterName} ({item.unit}){item.readingSource==='component_operating_hours'?' · Legacy component counter':item.meterId===null?' · Historical meter reading':''}</p></div>
              <Badge variant={item.state==='due'?'destructive':item.state==='approaching'?'outline':'secondary'}>
                {item.state==='due'?'Threshold reached':item.state==='approaching'?'Approaching due':
                  item.state==='awaiting_reading'?'Awaiting reading':'Upcoming'}
              </Badge>
            </div>
            <div className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-xs">
-             <span>Recorded meter: <strong>{item.currentValue===null?'No reading':amount(item.currentValue)+' '+item.unit}</strong></span>
+             <span>{item.readingSource==='component_operating_hours'?'Component operating hours':'Recorded meter'}: <strong>{item.currentValue===null?'No value':amount(item.currentValue)+' '+item.unit}</strong></span>
              <span>Next threshold: <strong>{amount(item.nextDueReading)} {item.unit}</strong></span>
            </div>
            {item.progressPercent!==null&&<div className="h-2 rounded-full bg-muted overflow-hidden" role="progressbar"
@@ -414,6 +414,12 @@ export default function ProductionSurveyPage(){
                amount(item.remaining)+' '+item.unit+' remaining before this PM threshold.'}
              {!item.autoGenerateWO&&' Planner review may be required.'}
            </p>
+           {item.readingSource==='component_operating_hours'&&
+             <p className="text-xs text-amber-700 dark:text-amber-300">
+               Legacy component-hour PM: this counter is not advanced by approved Production Survey readings.
+               A maintenance planner must link the appropriate registered, independently verified runtime meter
+               if shift-based meter updates should govern this PM schedule.
+             </p>}
          </div>)}
        </div>}
        <p className="text-xs text-muted-foreground">A due meter reading does not prove that a PM work order has already been created or completed. Use PM → Work Orders to confirm the work order and next cycle.</p>

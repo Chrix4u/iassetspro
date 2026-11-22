@@ -74,10 +74,29 @@ describe('Work Center endpoint authorization and data integrity', () => {
     expect(m.findUnique).not.toHaveBeenCalled();
   });
 
-  it('keeps read-only Work Center options available for production scheduling', async () => {
+  it('keeps Work Center list and read-only details available for production scheduling', async () => {
     m.permission.mockImplementation((_session: unknown, slug: string) => slug === 'production.view');
     expect((await list(request())).status).toBe(200);
+    const response = await detail(request('/wc-1'), ctx);
+    expect(response.status).toBe(200);
+    expect((await response.json()).data.id).toBe('wc-1');
+    // Reading a work center never gives a production viewer edit authority.
+    expect((await edit(request('/wc-1', { method: 'PUT', body: JSON.stringify({ name: 'Denied' }) }), ctx)).status).toBe(403);
+    expect(m.update).not.toHaveBeenCalled();
+  });
+
+  it('allows update-permitted users to load list and details before editing', async () => {
+    m.permission.mockImplementation((_session: unknown, slug: string) => slug === 'work_centers.update');
+    expect((await list(request())).status).toBe(200);
+    expect((await detail(request('/wc-1'), ctx)).status).toBe(200);
+  });
+
+  it('does not give Work Center records to unauthorized production users', async () => {
+    m.permission.mockReturnValue(false);
+    expect((await list(request())).status).toBe(403);
     expect((await detail(request('/wc-1'), ctx)).status).toBe(403);
+    expect(m.findMany).not.toHaveBeenCalled();
+    expect(m.findUnique).not.toHaveBeenCalled();
   });
 
   it('permits an administrator to read even without a separate view grant', async () => {

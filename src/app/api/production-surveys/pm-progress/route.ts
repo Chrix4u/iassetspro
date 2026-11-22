@@ -42,10 +42,12 @@ export async function GET(request: NextRequest) {
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], take: 201,
       }),
       db.pmSchedule.findMany({
-        where: { assetId, isActive: true, frequencyType: 'meter', recurrenceAuthority: { not: 'task' } },
+        where: { assetId, isActive: true, frequencyType: { in: ['meter', 'meter_based'] }, recurrenceAuthority: { not: 'task' } },
         select: {
-          id: true, title: true, autoGenerateWO: true, frequencyValue: true, frequencyUnit: true,
-          meterName: true, trigger: { select: { id: true, isActive: true, triggerType: true, triggerConfig: true, triggerValue: true } },
+          id: true, title: true, frequencyType: true, autoGenerateWO: true, frequencyValue: true, frequencyUnit: true,
+          meterName: true,
+          component: { select: { id: true, name: true, assetId: true, operatingHours: true } },
+          trigger: { select: { id: true, isActive: true, triggerType: true, triggerConfig: true, triggerValue: true } },
         }, take: 101,
       }),
     ]);
@@ -125,6 +127,29 @@ export async function GET(request: NextRequest) {
         const parsed = JSON.parse(schedule.trigger.triggerConfig ?? '{}');
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) config = parsed as Record<string, unknown>;
       } catch { continue; }
+      // A legacy meter_based PM schedule is evaluated from the component's
+      // operatingHours field. Production Survey approvals update registered
+      // AssetMeters, not this component counter. Expose it distinctly rather
+      // than misrepresenting it as an approved production or runtime reading.
+      if (schedule.frequencyType === 'meter_based') {
+        if (config.source && config.source !== 'component_operating_hours') continue;
+        if (!schedule.component || schedule.component.assetId !== assetId) continue;
+        const interval = Number(schedule.trigger.triggerValue || schedule.frequencyValue);
+        if (!Number.isFinite(interval) || interval <= 0) continue;
+        if (config.baselineHours == null || !Number.isFinite(Number(config.baselineHours))) continue;
+        const current = Number(schedule.component.operatingHours ?? 0);
+        const progress = calculateProductionPmProgress({
+          current, nextDue: Number(config.baselineHours) + interval, interval,
+        });
+        rows.push({
+          id: schedule.id, source: 'schedule', readingSource: 'component_operating_hours',
+          description: schedule.title, scheduleTitle: schedule.title,
+          autoGenerateWO: schedule.autoGenerateWO,
+          meterId: null, meterName: schedule.component.name + ' operating hours', unit: 'hours',
+          ...progress,
+        });
+        continue;
+      }
       if (config.source !== 'asset_meter_reading') continue;
       const meterName = typeof config.meterName === 'string' ? config.meterName : schedule.meterName || '';
       const unit = typeof config.unit === 'string' ? config.unit : schedule.frequencyUnit || '';

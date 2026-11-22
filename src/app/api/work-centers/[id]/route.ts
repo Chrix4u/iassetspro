@@ -12,7 +12,7 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!isAdmin(session) && !hasPermission(session, 'work_centers.view')) {
+    if (!isAdmin(session) && !hasPermission(session, 'work_centers.view') && !hasPermission(session, 'work_centers.update') && !hasPermission(session, 'production.view')) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

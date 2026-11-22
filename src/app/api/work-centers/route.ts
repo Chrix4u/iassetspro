@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Production scheduling/order screens need read-only work center choices.
-    if (!isAdmin(session) && !hasPermission(session, 'work_centers.view') && !hasPermission(session, 'production.view')) {
+    if (!isAdmin(session) && !hasPermission(session, 'work_centers.view') && !hasPermission(session, 'work_centers.update') && !hasPermission(session, 'production.view')) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 

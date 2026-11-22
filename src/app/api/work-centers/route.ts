@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
     // through this transaction, and creation plus its audit either both commit
     // or both roll back. No in-process mutex or new schema is required.
     const workCenter = await db.$transaction(async (tx) => {
-      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('iassetspro:work-center-code'))`;
+      await tx.$queryRaw`SELECT 1 AS acquired FROM pg_advisory_xact_lock(hashtext('iassetspro:work-center-code'))`;
       const code = await generateWCCode(tx);
       const created = await tx.workCenter.create({
         data: {

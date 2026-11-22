@@ -5,6 +5,7 @@ const m = vi.hoisted(() => ({
   session: vi.fn(), permission: vi.fn(), admin: vi.fn(),
   findMany: vi.fn(), count: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn(),
   create: vi.fn(), update: vi.fn(), auditCreate: vi.fn(),
+  transaction: vi.fn(), queryRaw: vi.fn(),
 }));
 
 vi.mock('@/lib/auth', () => ({
@@ -14,6 +15,7 @@ vi.mock('@/lib/auth', () => ({
 }));
 vi.mock('@/lib/db', () => ({
   db: {
+    $transaction: (...args: unknown[]) => m.transaction(...args),
     workCenter: {
       findMany: (...args: unknown[]) => m.findMany(...args),
       count: (...args: unknown[]) => m.count(...args),
@@ -42,6 +44,16 @@ describe('Work Center endpoint authorization and data integrity', () => {
     m.findMany.mockResolvedValue([wc]);
     m.findUnique.mockResolvedValue(wc);
     m.findFirst.mockResolvedValue({ code: 'WC-0001' });
+    m.queryRaw.mockImplementation(async (strings: TemplateStringsArray) =>
+      String(strings[0]).includes('pg_advisory_xact_lock') ? [] : [{ maxCode: 1n }],
+    );
+    m.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        $queryRaw: (...args: unknown[]) => m.queryRaw(...args),
+        workCenter: { create: (...args: unknown[]) => m.create(...args) },
+        auditLog: { create: (...args: unknown[]) => m.auditCreate(...args) },
+      }),
+    );
     m.count.mockResolvedValue(1);
     m.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'wc-new', ...data }));
     m.update.mockResolvedValue({ ...wc, status: 'maintenance' });
@@ -128,6 +140,61 @@ describe('Work Center endpoint authorization and data integrity', () => {
     const badStatus = await create(request('', { method: 'POST', body: JSON.stringify({ name: 'Line', type: 'production', status: 'deleted' }) }));
     expect(badStatus.status).toBe(400);
     expect(m.create).not.toHaveBeenCalled();
+  });
+
+  it('allocates a code and audit in one transaction under a database advisory lock', async () => {
+    m.permission.mockImplementation((_session: unknown, slug: string) => slug === 'work_centers.create');
+    const response = await create(request('', {
+      method: 'POST', body: JSON.stringify({ name: 'Cutting Line', type: 'production' }),
+    }));
+    expect(response.status).toBe(201);
+    expect(m.transaction).toHaveBeenCalledTimes(1);
+    expect(m.queryRaw).toHaveBeenCalledTimes(2);
+    expect(String(m.queryRaw.mock.calls[0][0][0])).toContain('pg_advisory_xact_lock');
+    expect(String(m.queryRaw.mock.calls[1][0][0])).toContain('MAX(SUBSTRING(code FROM 4)');
+    expect(m.auditCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        action: 'create', entityType: 'work_center', entityId: 'wc-new',
+      }),
+    });
+  });
+
+  it('orders generated WC codes numerically after the fourth digit', async () => {
+    m.permission.mockImplementation((_session: unknown, slug: string) => slug === 'work_centers.create');
+    m.queryRaw.mockImplementation(async (strings: TemplateStringsArray) =>
+      String(strings[0]).includes('pg_advisory_xact_lock') ? [] : [{ maxCode: 9999n }],
+    );
+    const response = await create(request('', {
+      method: 'POST', body: JSON.stringify({ name: 'New Packing Line', type: 'packaging' }),
+    }));
+    expect(response.status).toBe(201);
+    expect(m.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ code: 'WC-10000' }),
+    }));
+  });
+
+  it('refuses unsafe code allocation without making a work center or audit', async () => {
+    m.permission.mockImplementation((_session: unknown, slug: string) => slug === 'work_centers.create');
+    m.queryRaw.mockImplementation(async (strings: TemplateStringsArray) =>
+      String(strings[0]).includes('pg_advisory_xact_lock') ? [] : [{ maxCode: BigInt(Number.MAX_SAFE_INTEGER) }],
+    );
+    const response = await create(request('', {
+      method: 'POST', body: JSON.stringify({ name: 'Limit', type: 'production' }),
+    }));
+    expect(response.status).toBe(500);
+    expect(m.create).not.toHaveBeenCalled();
+    expect(m.auditCreate).not.toHaveBeenCalled();
+  });
+
+  it('does not acknowledge a failed audit as a successful creation', async () => {
+    m.permission.mockImplementation((_session: unknown, slug: string) => slug === 'work_centers.create');
+    m.auditCreate.mockRejectedValue(new Error('Audit unavailable'));
+    const response = await create(request('', {
+      method: 'POST', body: JSON.stringify({ name: 'Rewind Line', type: 'production' }),
+    }));
+    expect(response.status).toBe(500);
+    expect(m.transaction).toHaveBeenCalledTimes(1);
+    expect(m.auditCreate).toHaveBeenCalledTimes(1);
   });
 
   it('trims valid names and safely converts a numeric capacity on create', async () => {

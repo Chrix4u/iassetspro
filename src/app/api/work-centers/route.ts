@@ -12,7 +12,7 @@ async function generateWCCode(tx: Prisma.TransactionClient): Promise<string> {
     FROM work_centers
     WHERE code ~ '^WC-[0-9]+$'
   `;
-  const maxCode = Number(rows[0]?.maxCode ?? 0n);
+  const maxCode = Number(rows[0]?.maxCode ?? BigInt(0));
   if (!Number.isSafeInteger(maxCode) || maxCode < 0 || maxCode === Number.MAX_SAFE_INTEGER) {
     throw new Error('Work center code sequence is outside the supported range');
   }

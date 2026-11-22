@@ -170,6 +170,8 @@ describe('Work Center endpoint authorization and data integrity', () => {
     expect(m.transaction).toHaveBeenCalledTimes(1);
     expect(m.queryRaw).toHaveBeenCalledTimes(2);
     expect(String(m.queryRaw.mock.calls[0][0][0])).toContain('pg_advisory_xact_lock');
+    // Prisma cannot deserialize PostgreSQL's void lock result; select a scalar.
+    expect(String(m.queryRaw.mock.calls[0][0][0])).toContain('SELECT 1 AS acquired FROM');
     expect(String(m.queryRaw.mock.calls[1][0][0])).toContain('MAX(SUBSTRING(code FROM 4)');
     expect(m.auditCreate).toHaveBeenCalledWith({
       data: expect.objectContaining({

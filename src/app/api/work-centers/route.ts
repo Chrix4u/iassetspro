@@ -1,22 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import type { Prisma } from '@prisma/client';
 
-// Helper: generate work center code WC-NNNN
-async function generateWCCode(): Promise<string> {
-  const latest = await db.workCenter.findFirst({
-    orderBy: { code: 'desc' },
-    select: { code: true },
-  });
-
-  let nextNum = 1;
-  if (latest) {
-    const parts = latest.code.split('-');
-    const lastNum = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastNum)) nextNum = lastNum + 1;
+// Allocate work center codes under the POST transaction's advisory lock.
+// Lexicographic sorting of strings like WC-9999 and WC-10000 is incorrect;
+// the numeric maximum remains reliable past the four-digit display width.
+async function generateWCCode(tx: Prisma.TransactionClient): Promise<string> {
+  const rows = await tx.$queryRaw<Array<{ maxCode: bigint }>>`
+    SELECT COALESCE(MAX(SUBSTRING(code FROM 4)::bigint), 0)::bigint AS "maxCode"
+    FROM work_centers
+    WHERE code ~ '^WC-[0-9]+$'
+  `;
+  const maxCode = Number(rows[0]?.maxCode ?? 0n);
+  if (!Number.isSafeInteger(maxCode) || maxCode < 0 || maxCode === Number.MAX_SAFE_INTEGER) {
+    throw new Error('Work center code sequence is outside the supported range');
   }
-
-  return `WC-${String(nextNum).padStart(4, '0')}`;
+  return `WC-${String(maxCode + 1).padStart(4, '0')}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -136,31 +136,35 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Capacity must be a nonnegative whole number' }, { status: 400 });
     }
 
-    const code = await generateWCCode();
-
-    const workCenter = await db.workCenter.create({
-      data: {
-        code,
-        name: name.trim(),
-        description: typeof description === 'string' ? description.trim() || null : null,
-        type,
-        status: status || 'active',
-        location: typeof location === 'string' ? location.trim() || null : null,
-        capacity: numericCapacity,
-        capacityUnit: typeof capacityUnit === 'string' && capacityUnit.trim() ? capacityUnit.trim() : 'units/hour',
-        createdById: session.userId,
-      },
-    });
-
-    // Create audit log
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'create',
-        entityType: 'work_center',
-        entityId: workCenter.id,
-        newValues: JSON.stringify({ code, name, type }),
-      },
+    // Serialize allocation across app instances. The advisory lock lasts only
+    // through this transaction, and creation plus its audit either both commit
+    // or both roll back. No in-process mutex or new schema is required.
+    const workCenter = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('iassetspro:work-center-code'))`;
+      const code = await generateWCCode(tx);
+      const created = await tx.workCenter.create({
+        data: {
+          code,
+          name: name.trim(),
+          description: typeof description === 'string' ? description.trim() || null : null,
+          type,
+          status: status || 'active',
+          location: typeof location === 'string' ? location.trim() || null : null,
+          capacity: numericCapacity,
+          capacityUnit: typeof capacityUnit === 'string' && capacityUnit.trim() ? capacityUnit.trim() : 'units/hour',
+          createdById: session.userId,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'create',
+          entityType: 'work_center',
+          entityId: created.id,
+          newValues: JSON.stringify({ code, name: created.name, type }),
+        },
+      });
+      return created;
     });
 
     return NextResponse.json({ success: true, data: workCenter }, { status: 201 });

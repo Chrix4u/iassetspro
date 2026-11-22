@@ -45,7 +45,7 @@ describe('Work Center endpoint authorization and data integrity', () => {
     m.findUnique.mockResolvedValue(wc);
     m.findFirst.mockResolvedValue({ code: 'WC-0001' });
     m.queryRaw.mockImplementation(async (strings: TemplateStringsArray) =>
-      String(strings[0]).includes('pg_advisory_xact_lock') ? [] : [{ maxCode: 1n }],
+      String(strings[0]).includes('pg_advisory_xact_lock') ? [] : [{ maxCode: BigInt(1) }],
     );
     m.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) =>
       callback({
@@ -162,7 +162,7 @@ describe('Work Center endpoint authorization and data integrity', () => {
   it('orders generated WC codes numerically after the fourth digit', async () => {
     m.permission.mockImplementation((_session: unknown, slug: string) => slug === 'work_centers.create');
     m.queryRaw.mockImplementation(async (strings: TemplateStringsArray) =>
-      String(strings[0]).includes('pg_advisory_xact_lock') ? [] : [{ maxCode: 9999n }],
+      String(strings[0]).includes('pg_advisory_xact_lock') ? [] : [{ maxCode: BigInt(9999) }],
     );
     const response = await create(request('', {
       method: 'POST', body: JSON.stringify({ name: 'New Packing Line', type: 'packaging' }),

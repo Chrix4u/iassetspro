@@ -1,5 +1,6 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
@@ -112,7 +113,26 @@ export async function POST(
     // Check the protected GLB has not changed after its provenance was
     // recorded. A genuine source digest comparison is meaningless if the
     // installed model bytes have been silently replaced.
-    const glb=await readFile(privateCadFilePath(root,id));
+    const sourcePath=privateCadFilePath(root,id);
+    // Bound the protected file before any read and never follow a source
+    // symlink. A damaged/replaced file must not allocate an unbounded buffer.
+    const handle=await open(sourcePath,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    let glb:Buffer;
+    try {
+      const info=await handle.stat();
+      if (!info.isFile() || info.size !== model.fileSize ||
+          info.size > MAX_PRIVATE_CAD_UPLOAD_BYTES || info.size <= 0) {
+        return NextResponse.json({success:false,error:'Stored CAD binary size or type mismatch'}, {status:409});
+      }
+      glb=await handle.readFile();
+      const afterwards=await handle.stat();
+      if (afterwards.size !== info.size || afterwards.mtimeMs !== info.mtimeMs) {
+        return NextResponse.json({success:false,error:'Stored CAD file changed during verification'}, {status:409});
+      }
+    } finally {
+      await handle.close();
+    }
     if (glb.length !== model.fileSize || glb.length > MAX_PRIVATE_CAD_UPLOAD_BYTES ||
         !timingSafeEqual(sha256(glb),Buffer.from(String(origin.glbSha256),'hex'))) {
       return NextResponse.json({success:false,error:'Stored CAD GLB checksum mismatch'}, {status:409});

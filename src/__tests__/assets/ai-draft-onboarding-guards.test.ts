@@ -52,6 +52,18 @@ describe('AI draft asset commissioning safety guards', () => {
     expect(route).toContain("lifecycleStatus: 'uncommissioned'");
   });
 
+  it('preflights the unique machine code family before persisting AI draft assets and parts', () => {
+    expect(route).toContain('normalizeAiMachineCode(requestedMachineCode');
+    expect(route).toContain('expectedAssetCodes');
+    expect(route).toContain('expectedPartCodes');
+    expect(route).toContain('aiAssemblyCode(mainAssetTag');
+    expect(route).toContain('aiComponentCode(mainAssetTag');
+    expect(route).toContain('aiPartCode(mainAssetTag');
+    expect(route).toContain('Choose another machine code');
+    expect(dialog).toContain('payload.machineCode = machineCode.trim().toUpperCase()');
+    expect(dialog).toContain('ST-001-A01-C01-P01');
+  });
+
   it('makes actual plant path and explicit concept approval mandatory in the generator modal', () => {
     expect(dialog).toContain('<FunctionalLocationPicker');
     expect(dialog).toContain('plantId={plantId}');

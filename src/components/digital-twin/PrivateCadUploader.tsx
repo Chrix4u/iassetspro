@@ -14,6 +14,17 @@ import {
   AlertDialogTitle, AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 
+interface CadSourceEvidence {
+  sourceOrigin: string;
+  sourceNote: string;
+  oemManufacturer: string | null;
+  oemModel: string | null;
+  drawingRevision: string | null;
+  nameplateSerial: string | null;
+  conversionSidecarPresent: boolean;
+  originalCadFileChecksumVerified: false;
+}
+
 export interface PrivateCadModel {
   id: string;
   name: string;
@@ -53,27 +64,33 @@ export function PrivateCadUploader({
   const [withdrawNote, setWithdrawNote] = useState('');
   const [reviewStatus, setReviewStatus] = useState<'checking' | 'awaiting-review' | 'withdrawn'>('checking');
   const [independentReviewerEligible, setIndependentReviewerEligible] = useState(false);
+  const [sourceEvidence, setSourceEvidence] = useState<CadSourceEvidence | null>(null);
 
   useEffect(() => {
     if (!selected?.id || selected.isActive) {
       setReviewStatus('checking');
       setIndependentReviewerEligible(false);
+      setSourceEvidence(null);
       return;
     }
     let cancelled=false;
     setReviewStatus('checking');
     setIndependentReviewerEligible(false);
+    setSourceEvidence(null);
     void api.get<{
       status:'withdrawn'|'approved'|'awaiting-review';
       independentReviewerEligible:boolean;
+      sourceEvidence: CadSourceEvidence | null;
     }>(
       '/api/smart-anatomy/models/' + encodeURIComponent(selected.id) + '/status',
     ).then(result => {
       if(cancelled) return;
       if(!result.success) {
         setReviewStatus('checking');
+        setSourceEvidence(null);
         return;
       }
+      setSourceEvidence(result.data?.sourceEvidence || null);
       setReviewStatus(result.data?.status==='withdrawn' ? 'withdrawn' : 'awaiting-review');
       setIndependentReviewerEligible(result.data?.independentReviewerEligible === true);
     }).catch(()=>{if(!cancelled)setReviewStatus('checking');});
@@ -274,6 +291,28 @@ export function PrivateCadUploader({
           <p className="text-[11px] text-slate-300">
             Inspect the actual file and registered component links below. This does not authorize physical disassembly or automatically create PM and work orders.
           </p>
+          {sourceEvidence && (
+            <div className="rounded-md border border-slate-700 bg-slate-900/70 p-3 space-y-2">
+              <p className="text-xs font-semibold text-slate-200">Original CAD source declarations (awaiting independent verification)</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-300">
+                <span>Source class: <strong>{sourceEvidence.sourceOrigin}</strong></span>
+                <span>Offline conversion evidence: <strong>{sourceEvidence.conversionSidecarPresent ? 'Supplied · GLB digest checked' : 'Not supplied'}</strong></span>
+                {sourceEvidence.sourceOrigin === 'licensed-oem' && (
+                  <>
+                    <span>Manufacturer: <strong>{sourceEvidence.oemManufacturer || 'Unrecorded'}</strong></span>
+                    <span>Machine model: <strong>{sourceEvidence.oemModel || 'Unrecorded'}</strong></span>
+                    <span>Drawing revision: <strong>{sourceEvidence.drawingRevision || 'Unrecorded'}</strong></span>
+                    <span>Nameplate serial: <strong>{sourceEvidence.nameplateSerial || 'Unrecorded'}</strong></span>
+                  </>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-300 whitespace-pre-wrap break-words">{sourceEvidence.sourceNote}</p>
+              <p className="text-[11px] font-medium text-amber-200">
+                The source file's original checksum, licensed drawing revision and identity of the physical machine
+                are not automatically certified by a GLB checksum. Verify against retained OEM documentation.
+              </p>
+            </div>
+          )}
           {!independentReviewerEligible && (
             <p className="rounded-md border border-amber-700/60 p-2 text-xs text-amber-200">
               Independent engineering sign-off is required. The uploader cannot approve their

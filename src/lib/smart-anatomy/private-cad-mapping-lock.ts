@@ -9,6 +9,13 @@ export class CadMappingFrozenError extends Error {
   }
 }
 
+export class CadMappingConflictError extends Error {
+  constructor(message = 'CAD mapping changed since engineer review; refresh the model') {
+    super(message);
+    this.name = 'CadMappingConflictError';
+  }
+}
+
 /**
  * Serializes every private CAD component-mapping write with engineering
  * commission/withdrawal. Both use FOR UPDATE on the same asset_models row.

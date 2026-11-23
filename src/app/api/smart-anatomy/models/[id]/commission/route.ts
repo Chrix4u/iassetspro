@@ -81,17 +81,25 @@ export async function POST(
     let expectedChecksum: string | null = null;
     let claimOrigin: string | null = null;
     let claimedMachine: OemSourceIdentity | null = null;
+    let expectedOriginalSha256: string | null = null;
     try {
       const source = JSON.parse(storedSource?.newValues || '{}') as {
         checksum?: unknown;
         sourceOrigin?: unknown;
         sourceMachineClaim?: OemSourceIdentity | null;
+        conversionEvidence?: { sourceSha256?: unknown; glbSha256?: unknown } | null;
       };
       if (typeof source.checksum === 'string' && /^[0-9a-f]{64}$/i.test(source.checksum)) {
         expectedChecksum = source.checksum;
       }
       if (typeof source.sourceOrigin === 'string') claimOrigin = source.sourceOrigin;
       claimedMachine = source.sourceMachineClaim || null;
+      if (source.conversionEvidence &&
+          typeof source.conversionEvidence.sourceSha256 === 'string' &&
+          /^[0-9a-f]{64}$/i.test(source.conversionEvidence.sourceSha256) &&
+          source.conversionEvidence.glbSha256 === expectedChecksum) {
+        expectedOriginalSha256 = source.conversionEvidence.sourceSha256.toLowerCase();
+      }
     } catch {
       // Corrupt or missing original source attestation is never safe to approve.
     }
@@ -217,6 +225,35 @@ export async function POST(
         return { status: 'bindings-changed' as const };
       }
 
+      // Converted licensed OEM CAD must have its actual original source
+      // bytes independently compared to the converter's recorded digest.
+      // This does NOT certify OEM licensing/drawing authenticity.
+      let originalCadFileChecksumVerified = false;
+      if (claimOrigin === 'licensed-oem' && expectedOriginalSha256) {
+        const checked = await tx.auditLog.findFirst({
+          where: {entityType:'asset_model',entityId:id,action:'source_verified'},
+          select: {newValues:true},
+          orderBy: {createdAt:'desc'},
+        });
+        try {
+          const evidence = JSON.parse(checked?.newValues || '{}') as {
+            sourceSha256?: unknown;
+            verifiedById?: unknown;
+            independentlyComparedOriginalCadBytes?: unknown;
+          };
+          originalCadFileChecksumVerified =
+            evidence.sourceSha256 === expectedOriginalSha256 &&
+            evidence.independentlyComparedOriginalCadBytes === true &&
+            typeof evidence.verifiedById === 'string' &&
+            evidence.verifiedById !== model.uploadedById;
+        } catch {
+          originalCadFileChecksumVerified = false;
+        }
+        if (!originalCadFileChecksumVerified) {
+          return {status:'source-not-verified' as const};
+        }
+      }
+
       const updated = await tx.assetModel.update({
         where: { id }, data: { isActive: true },
       });
@@ -239,7 +276,8 @@ export async function POST(
             // audit, NOT the original STEP/IGES/BREP file. An offline
             // source digest comparison remains separate engineering evidence.
             uploadedGlbIntegrityVerified: true,
-            originalCadFileChecksumVerified: false,
+            originalCadFileChecksumVerified,
+            manufacturerSourceAuthenticityCertified: false,
             oemNameplateSourceClaimMatched: claimOrigin === 'licensed-oem' ? true : null,
             verifiedDrawingRevision: null,
             // Technical review does not approve any particular physical
@@ -258,6 +296,11 @@ export async function POST(
     if (outcome.status==='already-approved') {
       return NextResponse.json({
         success:false,error:'CAD was approved by another engineer; refresh the review state',
+      }, {status:409});
+    }
+    if (outcome.status==='source-not-verified') {
+      return NextResponse.json({
+        success:false,error:'Original manufacturer CAD bytes were not independently verified against the conversion manifest.',
       }, {status:409});
     }
     if (outcome.status==='bindings-changed') {

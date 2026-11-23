@@ -146,6 +146,66 @@ describe('Smart Anatomy source-backed engineering commissioning',()=>{
     }
   });
 
+  it('requires licensed OEM drawing source claims to match the complete registered machine nameplate',async()=>{
+    const declared={
+      sourceOrigin:'licensed-oem',
+      sourceMachineClaim:{
+        oemManufacturer:'Siemens',oemModel:'S100-M2',nameplateSerial:'SN-001',
+        drawingRevision:'Rev B',
+      },
+      checksum:sha256,
+    };
+    mocked.auditFindFirst.mockImplementation(({where}:{where:{action:string}})=>Promise.resolve(
+      where.action==='withdraw'?null:{newValues:JSON.stringify(declared)},
+    ));
+    const registered={
+      id,assetId:'asset1',uploadedById:'uploader1',
+      filePath:'/api/smart-anatomy/models/'+id+'/file',
+      fileSize:bytes.length,isActive:false,
+      asset:{plantId:'plant1',manufacturer:'SIEMENS',model:'s100-m2',serialNumber:'sn-001'},
+    };
+    mocked.findUnique.mockResolvedValue(registered);
+    const approved=await POST(request(),ctx);
+    expect(approved.status).toBe(200);
+    const audit=JSON.parse(mocked.auditCreate.mock.calls[0][0].data.newValues);
+    expect(audit.oemNameplateSourceClaimMatched).toBe(true);
+    expect(audit.uploadedGlbIntegrityVerified).toBe(true);
+    expect(audit.originalCadFileChecksumVerified).toBe(false);
+    expect(audit.verifiedDrawingRevision).toBeNull();
+
+    vi.clearAllMocks();
+    mocked.auditFindFirst.mockImplementation(({where}:{where:{action:string}})=>Promise.resolve(
+      where.action==='withdraw'?null:{newValues:JSON.stringify(declared)},
+    ));
+    mocked.findUnique.mockResolvedValue({...registered,asset:{...registered.asset,serialNumber:'SN-WRONG'}});
+    const rejected=await POST(request(),ctx);
+    expect(rejected.status).toBe(409);
+    expect((await rejected.json()).error).toContain('nameplate');
+    expect(mocked.modelUpdate).not.toHaveBeenCalled();
+  });
+
+  it('refuses licensed OEM model approval when installed machine nameplate is incomplete',async()=>{
+    mocked.auditFindFirst.mockImplementation(({where}:{where:{action:string}})=>Promise.resolve(
+      where.action==='withdraw'?null:{newValues:JSON.stringify({
+        checksum:sha256,sourceOrigin:'licensed-oem',
+        sourceMachineClaim:{
+          oemManufacturer:'Siemens',oemModel:'S100-M2',drawingRevision:'Rev B',
+          nameplateSerial:'SN-001',
+        },
+      })},
+    ));
+    mocked.findUnique.mockResolvedValue({
+      id,assetId:'asset1',uploadedById:'uploader1',
+      filePath:'/api/smart-anatomy/models/'+id+'/file',
+      fileSize:bytes.length,isActive:false,
+      asset:{plantId:'plant1',manufacturer:null,model:'S100-M2',serialNumber:'SN-001'},
+    });
+    const response=await POST(request(),ctx);
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain('manufacturer');
+    expect(mocked.modelUpdate).not.toHaveBeenCalled();
+  });
+
   it('does not resurrect a withdrawn revision if withdrawal commits after the initial check',async()=>{
     let withdrawnChecks=0;
     mocked.auditFindFirst.mockImplementation(({where}:{where:{action:string}})=>{

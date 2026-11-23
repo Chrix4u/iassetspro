@@ -65,6 +65,18 @@ describe('AI draft asset commissioning safety guards', () => {
     expect(dialog).toContain('e.g. ST-001');
   });
 
+  it('labels AI diagrams and twins as unverified conceptual material, never live machine health', () => {
+    expect(route).toContain('isPhysicalTwin: false');
+    expect(route).toContain("candidateSpecifications: machineData.specification");
+    expect(route).toContain('not a live or OEM-certified digital twin');
+    const twinStart = route.indexOf('await db.digitalTwin.create({');
+    const twinEnd = route.indexOf('summary.digitalTwin = 1', twinStart);
+    const twin = route.slice(twinStart, twinEnd);
+    expect(twin).toContain('healthScore: 0');
+    expect(twin).toContain('isActive: false');
+    expect(route).toContain('NOT OEM CAD');
+  });
+
   it('makes actual plant path and explicit concept approval mandatory in the generator modal', () => {
     expect(dialog).toContain('<FunctionalLocationPicker');
     expect(dialog).toContain('plantId={plantId}');

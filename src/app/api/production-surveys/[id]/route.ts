@@ -2,6 +2,7 @@ import { NextRequest,NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession,hasPermission,isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict,getPlantScope } from '@/lib/plant-scope';
+import { requiresCrewScope } from '@/lib/production-shift-access';
 import { allowedProductionMeter,allowedRuntimeMeter,parseProductionSurveyInput } from '@/lib/production-shift-survey';
 
 // Only the original operator may correct a REJECTED shift.
@@ -16,7 +17,7 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
     const scope=await getPlantScope(request,session);
     if(scope.denyAccess)return NextResponse.json({success:false,error:'Forbidden'},{status:403});
     const original=await db.productionShiftRecord.findUnique({where:{id},select:{
-      id:true,plantId:true,status:true,recordedById:true,meterReadingId:true,runtimeMeterReadingId:true,
+      id:true,plantId:true,assetId:true,shiftTemplateId:true,productionDate:true,status:true,recordedById:true,meterReadingId:true,runtimeMeterReadingId:true,
     }});
     if(!original)return NextResponse.json({success:false,error:'Shift record not found'},{status:404});
     if(!canAccessPlantStrict(scope,original.plantId)||original.recordedById!==session.userId)
@@ -27,6 +28,14 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
     let parsed:ReturnType<typeof parseProductionSurveyInput>;
     try{parsed=parseProductionSurveyInput(raw);}
     catch(error){return NextResponse.json({success:false,error:error instanceof Error?error.message:'Invalid correction'},{status:400});}
+    // A correction edits measured values, never the scheduled machine/date/shift.
+    // Moving a rejected record between plans could misattribute output or PM usage.
+    if(parsed.assetId!==original.assetId||
+       parsed.shiftTemplateId!==original.shiftTemplateId||
+       parsed.productionDate.getTime()!==original.productionDate.getTime())
+      return NextResponse.json({success:false,
+        error:'Machine, production date and shift cannot be changed when correcting a rejected record'},
+        {status:409});
     const asset=await db.asset.findUnique({where:{id:parsed.assetId},select:{id:true,plantId:true}});
     if(!asset||asset.plantId!==original.plantId)
       return NextResponse.json({success:false,error:'Corrected machine must belong to the original plant'},{status:400});
@@ -42,7 +51,9 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
     const record=await db.$transaction(async(tx)=>{
       await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))','iassetspro:production-survey:'+id);
       const latest=await tx.productionShiftRecord.findUnique({where:{id}});
-      if(!latest||latest.status!=='rejected'||latest.meterReadingId||latest.runtimeMeterReadingId||latest.recordedById!==session.userId)
+      if(!latest||latest.status!=='rejected'||latest.meterReadingId||latest.runtimeMeterReadingId||latest.recordedById!==session.userId||
+         latest.assetId!==original.assetId||latest.shiftTemplateId!==original.shiftTemplateId||
+         latest.productionDate.getTime()!==original.productionDate.getTime())
         throw new Error('Shift correction status changed; reload before editing');
       await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))',
         'iassetspro:production-plan:'+parsed.assetId+':'+parsed.productionDate.toISOString().slice(0,10)+':'+parsed.shiftTemplateId);
@@ -50,6 +61,17 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
         assetId_productionDate_shiftTemplateId:{assetId:parsed.assetId,productionDate:parsed.productionDate,
           shiftTemplateId:parsed.shiftTemplateId}}});
       if(!plan)throw new Error('Planner must configure this shift before it can be resubmitted');
+      if(requiresCrewScope(session)){
+        const assigned=await tx.productionShiftAssignment.findUnique({
+          where:{planId_userId:{planId:plan.id,userId:session.userId}}});
+        if(!assigned){
+          // Legacy shift records predate crew rosters. The original recorder
+          // may still correct a rejected record if no roster has ever existed.
+          const assignedCount=await tx.productionShiftAssignment.count({where:{planId:plan.id}});
+          if(assignedCount>0)
+            throw new Error('You are no longer assigned to this shift; ask a planner to review the correction');
+        }
+      }
       const fromPlan=parseProductionSurveyInput({...raw,assetId:parsed.assetId,
         productionDate:parsed.productionDate.toISOString().slice(0,10),shiftTemplateId:parsed.shiftTemplateId,
         unit:plan.unit,targetQuantity:plan.targetQuantity,availableMinutes:plan.availableMinutes});
@@ -68,7 +90,8 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
           throw new Error('Production and operating-hour meters must be different');
       }
       const updated=await tx.productionShiftRecord.update({where:{id},data:{
-        ...fromPlan,plannedShiftsPerDay:plan.plannedShiftsPerDay,shiftHours:plan.shiftHours,
+        ...fromPlan,planId:plan.id,productCode:plan.productCode,
+        plannedShiftsPerDay:plan.plannedShiftsPerDay,shiftHours:plan.shiftHours,
         standardUtilizationPct:plan.standardUtilizationPct,standardSpeed:plan.standardSpeed,
         status:'submitted',reviewNote:null,reviewedById:null,reviewedAt:null,
       }});
@@ -77,7 +100,7 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
           status:latest.status,meterId:latest.assetMeterId,
           runtimeMeterId:latest.runtimeMeterId,runtimeCounterHours:latest.runtimeCounterHours}),
         newValues:JSON.stringify({assetId:updated.assetId,date:updated.productionDate,output:updated.outputQuantity,unit:updated.unit,
-          status:updated.status,meterId:updated.assetMeterId,
+          status:updated.status,meterId:updated.assetMeterId,defective:updated.defectiveQuantity,productCode:updated.productCode,
           runtimeMeterId:updated.runtimeMeterId,runtimeCounterHours:updated.runtimeCounterHours})}});
       return updated;
     },{timeout:15000});
@@ -86,6 +109,6 @@ export async function PUT(request:NextRequest,{params}:{params:Promise<{id:strin
     const message=error instanceof Error?error.message:'Failed to correct survey';
     return NextResponse.json({success:false,error:/P2002|Unique constraint/i.test(message)?
       'This machine already has a record for the selected shift and day':message},
-      {status:/P2002|Unique constraint|status changed/i.test(message)?409:500});
+      {status:/P2002|Unique constraint|status changed/i.test(message)?409:/assigned|must|required|invalid/i.test(message)?400:500});
   }
 }

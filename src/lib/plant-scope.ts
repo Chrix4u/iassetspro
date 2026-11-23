@@ -150,9 +150,12 @@ export function canAccessPlantStrict(
   plantScope: PlantScopeResult,
   entityPlantId: string | null | undefined,
 ): boolean {
+  if (plantScope.denyAccess) return false;
   if (plantScope.isSystemWide) return true;
   if (!entityPlantId) return false; // operational entity MUST have a plant
-  if (plantScope.denyAccess) return false;
+  // A selected plant narrows access even for a user assigned to many plants.
+  // This applies to direct-ID lookups as well as collections.
+  if (plantScope.isScoped && plantScope.plantId !== entityPlantId) return false;
   return plantScope.accessiblePlantIds.includes(entityPlantId);
 }
 

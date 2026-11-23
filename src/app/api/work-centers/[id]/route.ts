@@ -12,20 +12,22 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    if (!isAdmin(session) && !hasPermission(session, 'work_centers.view') && !hasPermission(session, 'work_centers.update') && !hasPermission(session, 'production.view')) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
     const { id } = await params;
 
-    const workCenter = await db.workCenter.findUnique({
-      where: { id },
-    });
+    const workCenter = await db.workCenter.findUnique({ where: { id } });
 
-    if (!workCenter) {
+    if (!workCenter || !workCenter.isActive) {
       return NextResponse.json(
         { success: false, error: 'Work center not found' },
         { status: 404 }
       );
     }
 
-    // Note: WorkCenter model has no plantId field — plant-scope IDOR check not applicable
+    // Work centers are currently global (no plantId); enforce their view permission.
 
     return NextResponse.json({ success: true, data: workCenter });
   } catch (error: unknown) {
@@ -51,23 +53,59 @@ export async function PUT(
     const body = await request.json();
 
     const existing = await db.workCenter.findUnique({ where: { id } });
-    if (!existing) {
+    if (!existing || !existing.isActive) {
       return NextResponse.json(
         { success: false, error: 'Work center not found' },
         { status: 404 }
       );
     }
+    // Activation/deactivation is never permitted through the general edit endpoint.
+    if (Object.prototype.hasOwnProperty.call(body, 'isActive')) {
+      return NextResponse.json({ success: false, error: 'Use the dedicated deactivation action' }, { status: 400 });
+    }
 
     const updateData: Record<string, unknown> = {};
     const allowedFields = [
       'name', 'description', 'type', 'status', 'location',
-      'capacity', 'capacityUnit', 'isActive',
+      'capacity', 'capacityUnit',
     ];
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
         updateData[field] = body[field];
       }
+    }
+    if ('name' in updateData) {
+      if (typeof updateData.name !== 'string' || !updateData.name.trim()) {
+        return NextResponse.json({ success: false, error: 'Work center name is required' }, { status: 400 });
+      }
+      updateData.name = updateData.name.trim();
+    }
+    if ('name' in updateData && (updateData.name as string).length > 200) {
+      return NextResponse.json({ success: false, error: 'Work center name is too long' }, { status: 400 });
+    }
+    if ('type' in updateData && !['production', 'assembly', 'packaging', 'testing'].includes(String(updateData.type))) {
+      return NextResponse.json({ success: false, error: 'Invalid work center type' }, { status: 400 });
+    }
+    if ('status' in updateData && !['active', 'inactive', 'maintenance'].includes(String(updateData.status))) {
+      return NextResponse.json({ success: false, error: 'Invalid work center status' }, { status: 400 });
+    }
+    if ('description' in updateData && updateData.description !== null && typeof updateData.description !== 'string') {
+      return NextResponse.json({ success: false, error: 'Description must be text' }, { status: 400 });
+    }
+    if ('location' in updateData && updateData.location !== null && typeof updateData.location !== 'string') {
+      return NextResponse.json({ success: false, error: 'Location must be text' }, { status: 400 });
+    }
+    if ('capacityUnit' in updateData && typeof updateData.capacityUnit !== 'string') {
+      return NextResponse.json({ success: false, error: 'Capacity unit must be text' }, { status: 400 });
+    }
+    if ('capacity' in updateData) {
+      const raw = updateData.capacity;
+      const capacity = raw === null || raw === '' ? null : Number(raw);
+      if (capacity !== null && (!Number.isInteger(capacity) || capacity < 0)) {
+        return NextResponse.json({ success: false, error: 'Capacity must be a nonnegative whole number' }, { status: 400 });
+      }
+      updateData.capacity = capacity;
     }
 
     const updated = await db.workCenter.update({
@@ -104,14 +142,14 @@ export async function DELETE(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!session.roles.includes('admin')) {
+    if (!isAdmin(session)) {
       return NextResponse.json({ success: false, error: 'Admin access required' }, { status: 403 });
     }
 
     const { id } = await params;
 
     const existing = await db.workCenter.findUnique({ where: { id } });
-    if (!existing) {
+    if (!existing || !existing.isActive) {
       return NextResponse.json(
         { success: false, error: 'Work center not found' },
         { status: 404 }

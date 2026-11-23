@@ -42,10 +42,12 @@ export async function GET(request: NextRequest) {
         orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }], take: 201,
       }),
       db.pmSchedule.findMany({
-        where: { assetId, isActive: true, frequencyType: 'meter', recurrenceAuthority: { not: 'task' } },
+        where: { assetId, isActive: true, frequencyType: { in: ['meter', 'meter_based'] }, recurrenceAuthority: { not: 'task' } },
         select: {
-          id: true, title: true, autoGenerateWO: true, frequencyValue: true, frequencyUnit: true,
-          meterName: true, trigger: { select: { id: true, isActive: true, triggerType: true, triggerConfig: true, triggerValue: true } },
+          id: true, title: true, frequencyType: true, autoGenerateWO: true, frequencyValue: true, frequencyUnit: true,
+          meterName: true,
+          component: { select: { id: true, name: true, assetId: true, operatingHours: true } },
+          trigger: { select: { id: true, isActive: true, triggerType: true, triggerConfig: true, triggerValue: true } },
         }, take: 101,
       }),
     ]);
@@ -59,7 +61,6 @@ export async function GET(request: NextRequest) {
       }, { status: 422 });
     }
     const meters = registeredMeters.filter((meter) => allowedProductionMeter(meter.meterType) || allowedRuntimeMeter(meter.meterType,meter.unit));
-    const meterKeys = new Set(meters.map(meter => meter.name + '\u0000' + meter.unit));
     const readings = await Promise.all(meters.map(async meter => {
       const reading = await db.meterReading.findFirst({
         where: { assetId, meterName: meter.name, unit: meter.unit },
@@ -70,6 +71,23 @@ export async function GET(request: NextRequest) {
     }));
     const latestByMeterId = new Map(readings.map(entry => [entry.meterId, entry.reading]));
     const getMeter = (name: string, unit: string) => meters.find(meter => meter.name === name && meter.unit === unit);
+    // Historical unlinked PM plans use recorded (asset, name, unit) readings even
+    // if no active AssetMeter registration exists. Reuse their exact engine source
+    // instead of silently hiding those plans from this read-only panel.
+    const legacyReadings = new Map<string, Promise<{ value: number; readingDate: Date } | null>>();
+    const latestLegacyReading = (name: string, unit: string) => {
+      const key = name + '\u0000' + unit;
+      let query = legacyReadings.get(key);
+      if (!query) {
+        query = db.meterReading.findFirst({
+          where: { assetId, meterName: name, unit },
+          orderBy: [{ readingDate: 'desc' }, { createdAt: 'desc' }],
+          select: { value: true, readingDate: true },
+        });
+        legacyReadings.set(key, query);
+      }
+      return query;
+    };
     const rows: Array<Record<string, unknown>> = [];
     for (const task of taskAssignments) {
       if (task.schedule && (!task.schedule.isActive || task.schedule.recurrenceAuthority !== 'task')) continue;
@@ -77,11 +95,20 @@ export async function GET(request: NextRequest) {
       const meter = task.assetMeterId
         ? meters.find(m => m.id === task.assetMeterId && m.name === task.meterName && m.unit === task.frequencyUnit)
         : getMeter(task.meterName, task.frequencyUnit);
-      if (!meter || !meterKeys.has(task.meterName + '\u0000' + task.frequencyUnit)) continue;
+      // Linked plans require their exact active registered meter. Unlinked
+      // historical plans remain valid when only a MeterReading survives.
+      if (task.assetMeterId && !meter) continue;
       // The assignment engine reads currentValue for an explicitly linked AssetMeter;
       // legacy unlinked UBM tasks read the most recent MeterReading instead.
-      const reading = latestByMeterId.get(meter.id);
-      const current = task.assetMeterId ? Number(meter.currentValue) : reading ? Number(reading.value) : null;
+      const reading = meter
+        ? latestByMeterId.get(meter.id)
+        : await latestLegacyReading(task.meterName, task.frequencyUnit);
+      // The due engine ignores an unobserved registered meter even when its
+      // default currentValue is zero. The dashboard must not imply that the
+      // production counter has been measured before the first reading.
+      const current = task.assetMeterId
+        ? (meter?.lastReadingAt ? Number(meter.currentValue) : null)
+        : (reading ? Number(reading.value) : null);
       const progress = calculateProductionPmProgress({
         current, nextDue: Number(task.nextDueReading), interval: task.frequencyInterval === null ? null : Number(task.frequencyInterval),
       });
@@ -89,7 +116,7 @@ export async function GET(request: NextRequest) {
         id: task.id, source: 'task', description: task.pmTask.description,
         scheduleTitle: task.schedule?.title ?? null,
         autoGenerateWO: task.schedule?.autoGenerateWO ?? false,
-        meterId: meter.id, meterName: meter.name, unit: meter.unit,
+        meterId: meter?.id ?? null, meterName: task.meterName, unit: task.frequencyUnit,
         ...progress,
       });
     }
@@ -100,16 +127,40 @@ export async function GET(request: NextRequest) {
         const parsed = JSON.parse(schedule.trigger.triggerConfig ?? '{}');
         if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) config = parsed as Record<string, unknown>;
       } catch { continue; }
+      // A legacy meter_based PM schedule is evaluated from the component's
+      // operatingHours field. Production Survey approvals update registered
+      // AssetMeters, not this component counter. Expose it distinctly rather
+      // than misrepresenting it as an approved production or runtime reading.
+      if (schedule.frequencyType === 'meter_based') {
+        if (config.source && config.source !== 'component_operating_hours') continue;
+        if (!schedule.component || schedule.component.assetId !== assetId) continue;
+        const interval = Number(schedule.trigger.triggerValue || schedule.frequencyValue);
+        if (!Number.isFinite(interval) || interval <= 0) continue;
+        if (config.baselineHours == null || !Number.isFinite(Number(config.baselineHours))) continue;
+        const current = Number(schedule.component.operatingHours ?? 0);
+        const progress = calculateProductionPmProgress({
+          current, nextDue: Number(config.baselineHours) + interval, interval,
+        });
+        rows.push({
+          id: schedule.id, source: 'schedule', readingSource: 'component_operating_hours',
+          description: schedule.title, scheduleTitle: schedule.title,
+          autoGenerateWO: schedule.autoGenerateWO,
+          meterId: null, meterName: schedule.component.name + ' operating hours', unit: 'hours',
+          ...progress,
+        });
+        continue;
+      }
       if (config.source !== 'asset_meter_reading') continue;
       const meterName = typeof config.meterName === 'string' ? config.meterName : schedule.meterName || '';
       const unit = typeof config.unit === 'string' ? config.unit : schedule.frequencyUnit || '';
       const meter = getMeter(meterName, unit);
-      if (!meter) continue;
       const interval = Number(schedule.trigger.triggerValue || schedule.frequencyValue);
       const baseline = config.baselineValue;
       if (!(Number.isFinite(interval) && interval > 0)) continue;
       if (baseline === null || baseline === undefined || !Number.isFinite(Number(baseline))) continue;
-      const latest = latestByMeterId.get(meter.id);
+      const latest = meter
+        ? latestByMeterId.get(meter.id)
+        : await latestLegacyReading(meterName, unit);
       const current = latest ? Number(latest.value) : null;
       const progress = calculateProductionPmProgress({
         current, nextDue: Number(baseline) + interval, interval,
@@ -117,7 +168,7 @@ export async function GET(request: NextRequest) {
       rows.push({
         id: schedule.id, source: 'schedule', description: schedule.title, scheduleTitle: schedule.title,
         autoGenerateWO: schedule.autoGenerateWO,
-        meterId: meter.id, meterName: meter.name, unit: meter.unit,
+        meterId: meter?.id ?? null, meterName, unit,
         ...progress,
       });
     }

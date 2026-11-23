@@ -30,18 +30,31 @@ import {
   Search, Plus, RefreshCw, AlertTriangle, CheckCircle, XCircle,
   ChevronDown, ChevronUp, Info, Zap, HeartPulse, Target,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, type ApiResponse } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { formatDuration } from '@/components/shared/helpers';
+import { formatUiDate, formatUiDateTime } from '@/lib/date-display';
 
 // ── API BASE ──────────────────────────────────────────────────────────────
 
 const API_BASE = '/api/reliability';
 
+// The shared API client resolves to an envelope even after HTTP errors.
+// Unwrap it once so component state never stores the envelope as domain data.
+function requireSuccess<T>(response: ApiResponse<T>): ApiResponse<T> {
+  if (!response.success) throw new Error(response.error || 'Reliability request failed');
+  return response;
+}
+function requireData<T>(response: ApiResponse<T>): T {
+  const success = requireSuccess(response);
+  if (success.data === undefined) throw new Error('Reliability response was missing data');
+  return success.data;
+}
+
 // ── SHARED FETCH HELPERS ──────────────────────────────────────────────────
 
 const fetchAssetOptions = async () => {
-  const res = await api.get<any[]>('/api/assets?limit=500');
+  const res = requireData(await api.get<any[]>('/api/assets?limit=500'));
   return res.map((a: any) => ({ value: a.id, label: (a.name || a.assetTag) + (a.serialNumber ? ` — ${a.serialNumber}` : '') }));
 };
 
@@ -249,9 +262,9 @@ function ReliabilityOverview({ onNavigate }: { onNavigate: (tab: string) => void
   const loadCriticality = async () => {
     try {
       setLoading(true);
-      const data = await api.get<{ rankings: CriticalityItem[]; summary: Record<string, unknown> }>(
-        `${API_BASE}/criticality/route`
-      );
+      const data = requireData(await api.get<{ rankings: CriticalityItem[]; summary: Record<string, unknown> }>(
+        `${API_BASE}/criticality`
+      ));
       setRankings(data.rankings || []);
       setSummary(data.summary || null);
     } catch (err) {
@@ -316,7 +329,7 @@ function ReliabilityOverview({ onNavigate }: { onNavigate: (tab: string) => void
                   <Activity className="h-5 w-5 text-blue-600" />
                 </div>
                 <div>
-                  <p className="text-2xl font-bold">{summary.avgScore || 0}</p>
+                  <p className="text-2xl font-bold">{typeof summary.avgScore === 'number' ? summary.avgScore : 0}</p>
                   <p className="text-xs text-muted-foreground">Avg Score</p>
                 </div>
               </div>
@@ -443,7 +456,7 @@ function FailureModesTab() {
       if (search) params.set('search', search);
       if (categoryFilter !== 'all') params.set('category', categoryFilter);
       if (severityFilter !== 'all') params.set('severity', severityFilter);
-      const data = await api.get<{ items: FailureMode[] }>(`${API_BASE}/failure-modes/route?${params}`);
+      const data = requireData(await api.get<{ items: FailureMode[] }>(`${API_BASE}/failure-modes?${params}`));
       setModes(data.items || []);
     } catch (err) {
       console.error(err);
@@ -457,7 +470,7 @@ function FailureModesTab() {
 
   const handleCreate = async () => {
     try {
-      await api.post(`${API_BASE}/failure-modes/route`, form);
+      requireSuccess(await api.post(`${API_BASE}/failure-modes`, form));
       toast.success('Failure mode created');
       setDialogOpen(false);
       setForm({ name: '', code: '', description: '', category: 'mechanical', severity: 'medium', detectionMethod: '' });
@@ -469,7 +482,7 @@ function FailureModesTab() {
 
   const viewDetail = async (id: string) => {
     try {
-      const data = await api.get<FailureMode>(`${API_BASE}/failure-modes/${id}/route`);
+      const data = requireData(await api.get<FailureMode>(`${API_BASE}/failure-modes/${id}`));
       setSelectedMode(data);
       setDetailOpen(true);
     } catch (err) {
@@ -479,7 +492,7 @@ function FailureModesTab() {
 
   const handleDelete = async (id: string) => {
     try {
-      await api.del(`${API_BASE}/failure-modes/${id}/route`);
+      requireSuccess(await api.delete(`${API_BASE}/failure-modes/${id}`));
       toast.success('Failure mode deleted');
       setDetailOpen(false);
       loadModes();
@@ -656,7 +669,7 @@ function FailureModesTab() {
                 <Separator />
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>Records: {selectedMode._count?.records || 0}</span>
-                  <span>Created: {new Date(selectedMode.createdAt).toLocaleDateString()}</span>
+                  <span>Created: {formatUiDate(selectedMode.createdAt)}</span>
                 </div>
               </div>
               <DialogFooter>
@@ -684,7 +697,7 @@ function RcmAnalysisTab() {
     if (!assetId) { setLoading(false); return; }
     try {
       setLoading(true);
-      const data = await api.get<{ items: RcmAnalysis[] }>(`${API_BASE}/rcm/route?assetId=${assetId}`);
+      const data = requireData(await api.get<{ items: RcmAnalysis[] }>(`${API_BASE}/rcm?assetId=${assetId}`));
       setAnalyses(data.items || []);
     } catch (err) {
       console.error(err);
@@ -699,7 +712,7 @@ function RcmAnalysisTab() {
   const handleCreate = async () => {
     try {
       setRunning(true);
-      await api.post(`${API_BASE}/rcm/route`, form);
+      requireSuccess(await api.post(`${API_BASE}/rcm`, form));
       toast.success('RCM analysis created');
       setDialogOpen(false);
       setForm({ assetId: '', name: '', description: '', methodology: 'full' });
@@ -804,7 +817,7 @@ function RcmAnalysisTab() {
                         </Badge>
                       </TableCell>
                       <TableCell className="hidden sm:table-cell text-xs text-muted-foreground">
-                        {a.analysisDate ? new Date(a.analysisDate).toLocaleDateString() : '—'}
+                        {formatUiDate(a.analysisDate)}
                       </TableCell>
                       <TableCell className="text-right text-xs text-muted-foreground">{a.asset.assetTag}</TableCell>
                     </TableRow>
@@ -833,7 +846,7 @@ function WeibullTab() {
     if (!componentId) { setLoading(false); return; }
     try {
       setLoading(true);
-      const data = await api.get<WeibullAnalysisItem[]>(`${API_BASE}/weibull-engineering/route?componentId=${componentId}`);
+      const data = requireData(await api.get<WeibullAnalysisItem[]>(`${API_BASE}/weibull-engineering?componentId=${componentId}`));
       setAnalyses(data || []);
     } catch (err) {
       console.error(err);
@@ -848,7 +861,7 @@ function WeibullTab() {
   const handleRunAnalysis = async () => {
     try {
       setRunning(true);
-      const result = await api.post<WeibullAnalysisItem>(`${API_BASE}/weibull-engineering/route`, { componentId });
+      const result = requireData(await api.post<WeibullAnalysisItem>(`${API_BASE}/weibull-engineering`, { componentId }));
       toast.success('Weibull analysis completed');
       loadAnalyses();
       // Show result
@@ -925,7 +938,7 @@ function WeibullTab() {
                       <p className="font-mono font-semibold">{a.confidence ? `${(a.confidence * 100).toFixed(0)}%` : '—'}</p>
                     </div>
                   </div>
-                  {result?.interpretation && (
+                  {typeof result?.interpretation === 'string' && (
                     <p className="text-xs text-muted-foreground italic">{result.interpretation as string}</p>
                   )}
                 </CardContent>
@@ -968,7 +981,7 @@ function WeibullTab() {
                       <TableCell className="font-mono text-sm">{a.scale?.toFixed(1) ?? '—'}</TableCell>
                       <TableCell className="text-sm">{a.failureCount}</TableCell>
                       <TableCell className="hidden sm:table-cell text-sm">{a.confidence ? `${(a.confidence * 100).toFixed(0)}%` : '—'}</TableCell>
-                      <TableCell className="text-right text-xs text-muted-foreground">{new Date(a.analyzedAt).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-right text-xs text-muted-foreground">{formatUiDate(a.analyzedAt)}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -1006,13 +1019,13 @@ function WeibullTab() {
                         </div>
                       ))}
                     </div>
-                    {result.interpretation && (
+                    {typeof result.interpretation === 'string' && (
                       <div className="bg-muted/50 rounded-lg p-3">
                         <p className="text-xs text-muted-foreground mb-1">Interpretation</p>
                         <p className="font-medium">{result.interpretation as string}</p>
                       </div>
                     )}
-                    {result.reliabilityAtIntervals && Array.isArray(result.reliabilityAtIntervals) && (
+                    {Array.isArray(result.reliabilityAtIntervals) && (
                       <div className="bg-muted/50 rounded-lg p-3">
                         <p className="text-xs text-muted-foreground mb-2">Reliability at Time Intervals</p>
                         <div className="space-y-1">
@@ -1030,7 +1043,7 @@ function WeibullTab() {
                   </div>
                 ) : (
                   <div className="py-8 text-center text-muted-foreground">
-                    <p className="text-sm">{selectedAnalysis.description || 'No result summary available'}</p>
+                    <p className="text-sm">No result summary available</p>
                   </div>
                 );
               })()}
@@ -1055,7 +1068,7 @@ function DowntimeTab() {
     if (!assetId) { setLoading(false); return; }
     try {
       setLoading(true);
-      const data = await api.get<DowntimeAnalysis[]>(`${API_BASE}/downtime/route?assetId=${assetId}`);
+      const data = requireData(await api.get<DowntimeAnalysis[]>(`${API_BASE}/downtime?assetId=${assetId}`));
       setAnalyses(data || []);
     } catch (err) {
       console.error(err);
@@ -1070,11 +1083,11 @@ function DowntimeTab() {
   const handleCompute = async () => {
     try {
       setRunning(true);
-      const result = await api.post<DowntimeAnalysis>(`${API_BASE}/downtime/route`, {
+      const result = requireData(await api.post<DowntimeAnalysis>(`${API_BASE}/downtime`, {
         assetId: form.assetId,
         periodStart: form.periodStart,
         periodEnd: form.periodEnd,
-      });
+      }));
       toast.success('Downtime analysis computed');
       setAssetId(form.assetId);
       setAnalyses((prev) => [result, ...prev]);
@@ -1186,7 +1199,7 @@ function DowntimeTab() {
                   {analyses.map((a) => (
                     <TableRow key={a.id}>
                       <TableCell className="text-xs">
-                        {new Date(a.periodStart).toLocaleDateString()} — {new Date(a.periodEnd).toLocaleDateString()}
+                        {formatUiDate(a.periodStart)} — {formatUiDate(a.periodEnd)}
                       </TableCell>
                       <TableCell className="font-mono text-sm">{formatDuration(a.totalDowntime)}</TableCell>
                       <TableCell className="font-mono text-sm text-green-600">{formatDuration(a.plannedDowntime)}</TableCell>
@@ -1220,7 +1233,7 @@ function RulTab() {
     try {
       setLoading(true);
       setNotFound(false);
-      const data = await api.get<RulData | null>(`${API_BASE}/rul/route?componentId=${componentId}`);
+      const data = requireData(await api.get<RulData | null>(`${API_BASE}/rul?componentId=${componentId}`));
       setRulData(data);
       setNotFound(!data);
     } catch (err) {
@@ -1235,7 +1248,7 @@ function RulTab() {
   const handleCompute = async () => {
     try {
       setRunning(true);
-      const result = await api.post<RulData>(`${API_BASE}/rul/route`, { componentId });
+      const result = requireData(await api.post<RulData>(`${API_BASE}/rul`, { componentId }));
       toast.success('RUL estimate computed');
       setRulData(result);
       setNotFound(false);
@@ -1361,7 +1374,7 @@ function RulTab() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Last Updated</p>
-                  <p className="text-xs">{new Date(rulData.lastUpdated).toLocaleString()}</p>
+                  <p className="text-xs">{formatUiDateTime(rulData.lastUpdated)}</p>
                 </div>
               </div>
             </CardContent>

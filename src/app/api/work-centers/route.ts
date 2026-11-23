@@ -1,22 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
+import type { Prisma } from '@prisma/client';
 
-// Helper: generate work center code WC-NNNN
-async function generateWCCode(): Promise<string> {
-  const latest = await db.workCenter.findFirst({
-    orderBy: { code: 'desc' },
-    select: { code: true },
-  });
-
-  let nextNum = 1;
-  if (latest) {
-    const parts = latest.code.split('-');
-    const lastNum = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastNum)) nextNum = lastNum + 1;
+// Allocate work center codes under the POST transaction's advisory lock.
+// Lexicographic sorting of strings like WC-9999 and WC-10000 is incorrect;
+// the numeric maximum remains reliable past the four-digit display width.
+async function generateWCCode(tx: Prisma.TransactionClient): Promise<string> {
+  const rows = await tx.$queryRaw<Array<{ maxCode: bigint }>>`
+    SELECT COALESCE(MAX(SUBSTRING(code FROM 4)::bigint), 0)::bigint AS "maxCode"
+    FROM work_centers
+    WHERE code ~ '^WC-[0-9]+$'
+  `;
+  const maxCode = Number(rows[0]?.maxCode ?? BigInt(0));
+  if (!Number.isSafeInteger(maxCode) || maxCode < 0 || maxCode === Number.MAX_SAFE_INTEGER) {
+    throw new Error('Work center code sequence is outside the supported range');
   }
-
-  return `WC-${String(nextNum).padStart(4, '0')}`;
+  return `WC-${String(maxCode + 1).padStart(4, '0')}`;
 }
 
 export async function GET(request: NextRequest) {
@@ -26,12 +26,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
+    // Production scheduling/order screens need read-only work center choices.
+    if (!isAdmin(session) && !hasPermission(session, 'work_centers.view') && !hasPermission(session, 'work_centers.update') && !hasPermission(session, 'production.view')) {
+      return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const status = searchParams.get('status');
     const type = searchParams.get('type');
-    const search = searchParams.get('search');
-    const page = parseInt(searchParams.get('page') || '1', 10);
-    const limit = parseInt(searchParams.get('limit') || '50', 10);
+    const search = searchParams.get('search')?.trim().slice(0, 150);
+    const requestedPage = Number(searchParams.get('page') || 1);
+    const requestedLimit = Number(searchParams.get('limit') || 50);
+    // A malformed or huge page/limit must not cause a DB error or an unbounded query.
+    const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+    const limit = Number.isSafeInteger(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 1000) : 50;
 
     const where: Record<string, unknown> = { isActive: true };
 
@@ -48,13 +57,13 @@ export async function GET(request: NextRequest) {
 
     const [workCenters, total] = await Promise.all([
       db.workCenter.findMany({
-        where: Object.keys(where).length > 1 || where.OR ? where : undefined,
+        where,
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
       }),
       db.workCenter.count({
-        where: Object.keys(where).length > 1 || where.OR ? where : { isActive: true },
+        where,
       }),
     ]);
 
@@ -109,39 +118,53 @@ export async function POST(request: NextRequest) {
       capacityUnit,
     } = body;
 
-    if (!name) {
+    if (typeof name !== 'string' || !name.trim()) {
       return NextResponse.json({ success: false, error: 'Work center name is required' }, { status: 400 });
     }
-
-    if (!type) {
-      return NextResponse.json({ success: false, error: 'Type is required' }, { status: 400 });
+    if (name.trim().length > 200) {
+      return NextResponse.json({ success: false, error: 'Work center name is too long' }, { status: 400 });
+    }
+    if (!['production', 'assembly', 'packaging', 'testing'].includes(type)) {
+      return NextResponse.json({ success: false, error: 'Invalid work center type' }, { status: 400 });
+    }
+    if (status !== undefined && !['active', 'inactive', 'maintenance'].includes(status)) {
+      return NextResponse.json({ success: false, error: 'Invalid work center status' }, { status: 400 });
     }
 
-    const code = await generateWCCode();
+    const numericCapacity = capacity == null || capacity === '' ? null : Number(capacity);
+    if (numericCapacity !== null && (!Number.isInteger(numericCapacity) || numericCapacity < 0)) {
+      return NextResponse.json({ success: false, error: 'Capacity must be a nonnegative whole number' }, { status: 400 });
+    }
 
-    const workCenter = await db.workCenter.create({
-      data: {
-        code,
-        name,
-        description: description || null,
-        type,
-        status: status || 'active',
-        location: location || null,
-        capacity: capacity ? parseInt(capacity, 10) : null,
-        capacityUnit: capacityUnit || 'units/hour',
-        createdById: session.userId,
-      },
-    });
-
-    // Create audit log
-    await db.auditLog.create({
-      data: {
-        userId: session.userId,
-        action: 'create',
-        entityType: 'work_center',
-        entityId: workCenter.id,
-        newValues: JSON.stringify({ code, name, type }),
-      },
+    // Serialize allocation across app instances. The advisory lock lasts only
+    // through this transaction, and creation plus its audit either both commit
+    // or both roll back. No in-process mutex or new schema is required.
+    const workCenter = await db.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT 1 AS acquired FROM pg_advisory_xact_lock(hashtext('iassetspro:work-center-code'))`;
+      const code = await generateWCCode(tx);
+      const created = await tx.workCenter.create({
+        data: {
+          code,
+          name: name.trim(),
+          description: typeof description === 'string' ? description.trim() || null : null,
+          type,
+          status: status || 'active',
+          location: typeof location === 'string' ? location.trim() || null : null,
+          capacity: numericCapacity,
+          capacityUnit: typeof capacityUnit === 'string' && capacityUnit.trim() ? capacityUnit.trim() : 'units/hour',
+          createdById: session.userId,
+        },
+      });
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'create',
+          entityType: 'work_center',
+          entityId: created.id,
+          newValues: JSON.stringify({ code, name: created.name, type }),
+        },
+      });
+      return created;
     });
 
     return NextResponse.json({ success: true, data: workCenter }, { status: 201 });

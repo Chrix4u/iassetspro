@@ -36,10 +36,11 @@ const bytes=readFileSync('public/smart-anatomy-demos/original-centrifugal-pump.g
 const sha256=createHash('sha256').update(bytes).digest('hex');
 const path=[...auditedGlbMeshPaths(bytes)].find(item=>item.endsWith('/Impeller_Hub'))!;
 const ctx={params:Promise.resolve({id})};
-const request=()=>new NextRequest('http://localhost/api/smart-anatomy/models/'+id+'/commission',{
+const request=(acknowledgeUnmapped=true)=>new NextRequest('http://localhost/api/smart-anatomy/models/'+id+'/commission',{
   method:'POST',
   body:JSON.stringify({
     sourceReviewed:true,geometryReviewed:true,componentMappingReviewed:true,
+    unmappedNodesAcknowledged:acknowledgeUnmapped,
     reviewNote:'Verified actual source mesh and installed pump mapping',
   }),
 });
@@ -90,6 +91,14 @@ beforeEach(()=>{
 });
 
 describe('Smart Anatomy source-backed engineering commissioning',()=>{
+  it('does not approve a partially mapped OEM assembly without reviewing the remaining visual-only surfaces',async()=>{
+    const result=await POST(request(false),ctx);
+    expect(result.status).toBe(409);
+    expect((await result.json()).error).toContain('unmapped source meshes');
+    expect(mocked.modelUpdate).not.toHaveBeenCalled();
+    expect(mocked.auditCreate).not.toHaveBeenCalled();
+  });
+
   it('commissioning approved geometry requires a real model, checksum and registered exact mesh path',async()=>{
     const res=await POST(request(),ctx);
     expect(res.status).toBe(200);
@@ -100,6 +109,9 @@ describe('Smart Anatomy source-backed engineering commissioning',()=>{
     expect(audit.originalCadFileChecksumVerified).toBe(false);
     expect(audit).not.toHaveProperty('originalSourceIntegrityVerified');
     expect(audit.exactSourcePathMatches).toBe(1);
+    expect(audit.unmappedSourceMeshCount).toBeGreaterThan(0);
+    expect(audit.unmappedNodesAcknowledged).toBe(true);
+    expect(audit.mappingCoveragePercent).toBeLessThan(100);
     expect(audit.maintenanceProcedureApproved).toBe(false);
   });
 

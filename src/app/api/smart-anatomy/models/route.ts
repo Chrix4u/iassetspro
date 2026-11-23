@@ -6,6 +6,7 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { inspectSelfContainedGlb, MAX_PRIVATE_CAD_UPLOAD_BYTES } from '@/lib/smart-anatomy/validate-glb';
 import { validateOfflineCadEvidence } from '@/lib/smart-anatomy/offline-cad-evidence';
+import { validateOemSourceIdentity } from '@/lib/smart-anatomy/oem-identity';
 import { assertPrivateCadStorageReady, privateCadFilePath, privateCadStorageRoot } from '@/lib/smart-anatomy/private-cad-storage';
 import { MultipartUploadError, MAX_CAD_MULTIPART_OVERHEAD, readBoundedMultipart } from '@/lib/smart-anatomy/limited-multipart';
 
@@ -100,17 +101,15 @@ export async function POST(req: NextRequest) {
     }
 
     if (sourceOrigin === 'licensed-oem') {
-      // Refuse a source known to belong to another installed machine. Blank
-      // registered nameplate data can enter draft review, but must be completed
-      // before the independent engineering commissioner can approve it.
-      const equal = (left: string | null, right: string): boolean =>
-        !left || left.trim().toUpperCase() === right.toUpperCase();
-      if (!equal(asset.manufacturer, oemManufacturer) ||
-          !equal(asset.model, oemModel) ||
-          !equal(asset.serialNumber, nameplateSerial)) {
+      // Draft import permits missing registered nameplate fields, but never
+      // known disagreements. Commissioning will require all fields matched.
+      const identity = validateOemSourceIdentity(
+        { oemManufacturer, oemModel, drawingRevision, nameplateSerial },
+        asset, false,
+      );
+      if (!identity.valid) {
         return NextResponse.json({
-          success: false,
-          error: 'OEM drawing identity conflicts with the registered machine nameplate',
+          success: false, error: identity.reason,
         }, { status: 409 });
       }
     }

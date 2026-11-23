@@ -27,6 +27,15 @@ describe('machine engineering schematic levels', () => {
     ]);
   });
 
+  it('does not display duplicate component IDs twice at the same level', () => {
+    const levels = buildSchematicLevels([
+      { id: 'a', parentId: null },
+      { id: 'a', parentId: null },
+      { id: 'b', parentId: 'a' },
+    ]);
+    expect(levels.map((level) => level.map((node) => node.id))).toEqual([['a'], ['b']]);
+  });
+
   it('does not loop or fabricate a hierarchy for disconnected parent cycles', () => {
     const levels = buildSchematicLevels([
       { id: 'root', parentId: null },

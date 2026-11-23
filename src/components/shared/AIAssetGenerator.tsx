@@ -62,6 +62,7 @@ type GenStep = 'input' | 'generating' | 'result';
 export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGeneratorProps) {
   const [step, setStep] = useState<GenStep>('input');
   const [machineName, setMachineName] = useState('');
+  const [machineCode, setMachineCode] = useState('');
   const [additionalContext, setAdditionalContext] = useState('');
   const [plantId, setPlantId] = useState('');
   const [categoryId, setCategoryId] = useState('');
@@ -82,6 +83,7 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
   const reset = () => {
     setStep('input');
     setMachineName('');
+    setMachineCode('');
     setAdditionalContext('');
     setPlantId('');
     setCategoryId('');
@@ -244,6 +246,7 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
 
     try {
       const payload: any = { machineName: machineName.trim(), functionalLocationId, acknowledgeUnverified: true };
+      if (machineCode.trim()) payload.machineCode = machineCode.trim().toUpperCase();
       if (additionalContext.trim()) payload.additionalContext = additionalContext.trim();
       if (plantId) payload.plantId = plantId;
       if (categoryId) payload.categoryId = categoryId;
@@ -309,6 +312,31 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
               <p className="text-xs text-muted-foreground">
                 Be specific for best results — include type, brand, or model if known
               </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Internal Machine Code (optional)</Label>
+              <Input
+                placeholder="e.g. ST-001"
+                value={machineCode}
+                onChange={event => setMachineCode(event.target.value.toUpperCase())}
+                maxLength={40}
+                className="h-11 font-mono"
+              />
+              {machineCode.trim() ? (
+                /^[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(machineCode.trim()) && machineCode.trim().length >= 3 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Code preview: {machineCode.trim()} → {machineCode.trim()}-A01 → {machineCode.trim()}-A01-C01 → {machineCode.trim()}-A01-C01-P01.
+                    Assemblies, components and proposed parts receive derived internal codes; genuine OEM numbers remain separate.
+                  </p>
+                ) : (
+                  <p role="alert" className="text-xs text-red-600">
+                    Use 3–40 letters/numbers in groups separated by hyphens.
+                  </p>
+                )
+              ) : (
+                <p className="text-xs text-muted-foreground">An AI-prefixed machine code will be generated unless you enter your own unique code.</p>
+              )}
             </div>
 
             {/* Additional context */}
@@ -422,7 +450,7 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
             <Button variant="outline" onClick={() => handleClose(false)}>Cancel</Button>
             <Button
               onClick={handleGenerate}
-              disabled={!machineName.trim() || !plantId || !functionalLocationId || !acknowledgeUnverified}
+              disabled={!machineName.trim() || !plantId || !functionalLocationId || !acknowledgeUnverified || (!!machineCode.trim() && (machineCode.trim().length < 3 || !/^[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(machineCode.trim())))}
               className="bg-violet-600 hover:bg-violet-700 text-white gap-2"
             >
               <Sparkles className="h-4 w-4" />

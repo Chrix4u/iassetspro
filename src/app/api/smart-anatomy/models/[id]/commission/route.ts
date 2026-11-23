@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { assertPrivateCadStorageReady, privateCadFilePath, privateCadStorageRoot } from '@/lib/smart-anatomy/private-cad-storage';
 import { auditedGlbMeshPaths } from '@/lib/smart-anatomy/mesh-source-paths';
+import { validateOemSourceIdentity, type OemSourceIdentity } from '@/lib/smart-anatomy/oem-identity';
 import { MAX_PRIVATE_CAD_UPLOAD_BYTES } from '@/lib/smart-anatomy/validate-glb';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
@@ -38,7 +39,7 @@ export async function POST(
       where: { id },
       select: { id: true, assetId: true, uploadedById: true,
         filePath: true, fileSize: true, isActive: true,
-        asset: { select: { plantId: true } } },
+        asset: { select: { plantId: true, manufacturer: true, model: true, serialNumber: true } } },
     });
     if (!model || !/^\/api\/smart-anatomy\/models\/[0-9a-f-]{36}\/file$/i.test(model.filePath) ||
         model.filePath !== '/api/smart-anatomy/models/' + id + '/file') {
@@ -78,11 +79,19 @@ export async function POST(
       orderBy: { createdAt: 'asc' },
     });
     let expectedChecksum: string | null = null;
+    let claimOrigin: string | null = null;
+    let claimedMachine: OemSourceIdentity | null = null;
     try {
-      const source = JSON.parse(storedSource?.newValues || '{}') as { checksum?: unknown };
+      const source = JSON.parse(storedSource?.newValues || '{}') as {
+        checksum?: unknown;
+        sourceOrigin?: unknown;
+        sourceMachineClaim?: OemSourceIdentity | null;
+      };
       if (typeof source.checksum === 'string' && /^[0-9a-f]{64}$/i.test(source.checksum)) {
         expectedChecksum = source.checksum;
       }
+      if (typeof source.sourceOrigin === 'string') claimOrigin = source.sourceOrigin;
+      claimedMachine = source.sourceMachineClaim || null;
     } catch {
       // Corrupt or missing original source attestation is never safe to approve.
     }
@@ -90,6 +99,15 @@ export async function POST(
       return NextResponse.json({
         success: false, error: 'Original CAD checksum attestation is missing',
       }, { status: 409 });
+    }
+
+    if (claimOrigin === 'licensed-oem') {
+      const identity = validateOemSourceIdentity(claimedMachine || {}, model.asset);
+      if (!identity.valid) {
+        return NextResponse.json({
+          success: false, error: identity.reason,
+        }, { status: 409 });
+      }
     }
 
     const root = privateCadStorageRoot();
@@ -187,6 +205,8 @@ export async function POST(
             // source digest comparison remains separate engineering evidence.
             uploadedGlbIntegrityVerified: true,
             originalCadFileChecksumVerified: false,
+            oemNameplateSourceClaimMatched: claimOrigin === 'licensed-oem' ? true : null,
+            verifiedDrawingRevision: null,
             // Technical review does not approve any particular physical
             // disassembly instructions or automated maintenance.
             maintenanceProcedureApproved: false,

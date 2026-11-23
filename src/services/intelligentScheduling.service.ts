@@ -45,12 +45,23 @@ export class IntelligentSchedulingService {
           ...(plantId ? { plantId } : {}),
           status: { in: ['approved', 'planned', 'assigned'] },
         },
-        include: {
-          asset: { select: { id: true, name: true, condition: true, criticality: true } },
-        },
         orderBy: { priority: 'asc' },
         take: 100,
       });
+
+      // WorkOrder stores assetId as an external reference, not a Prisma
+      // asset relation. Resolve actual assets explicitly, within plant scope,
+      // instead of using an invalid include and silently losing priority data.
+      const relatedAssetIds = [...new Set(workOrders
+        .map(wo => wo.assetId)
+        .filter((id): id is string => Boolean(id)))];
+      const relatedAssets = relatedAssetIds.length
+        ? await db.asset.findMany({
+            where: { id: { in: relatedAssetIds }, ...(plantId ? {plantId} : {}) },
+            select: { id: true, name: true, condition: true, criticality: true },
+          })
+        : [];
+      const assetsById = new Map(relatedAssets.map(asset => [asset.id, asset]));
 
       // Get technician availability
       const technicians = await db.user.findMany({
@@ -63,10 +74,11 @@ export class IntelligentSchedulingService {
       const conflicts: ScheduleOptimization['resourceConflicts'] = [];
 
       for (const wo of workOrders) {
-        const priority = this.calculatePriority(wo, wo.asset);
+        const asset = wo.assetId ? assetsById.get(wo.assetId) || null : null;
+        const priority = this.calculatePriority(wo, asset);
         const recommendedDate = this.calculateOptimalDate(wo, startDate, endDate, recommendations);
         const duration = wo.estimatedHours || 4;
-        const reasoning = this.generateReasoning(wo, wo.asset, priority, recommendedDate);
+        const reasoning = this.generateReasoning(wo, asset, priority, recommendedDate);
 
         // Check for conflicts with already recommended items
         const conflictWith = recommendations
@@ -85,7 +97,7 @@ export class IntelligentSchedulingService {
           workOrderId: wo.id,
           workOrderTitle: wo.title,
           assetId: wo.assetId || '',
-          assetName: wo.asset?.name || 'Unknown',
+          assetName: asset?.name || wo.assetName || 'Unknown',
           recommendedDate: recommendedDate.toISOString(),
           priority,
           reasoning,

@@ -182,7 +182,11 @@ export async function POST(
             geometryReviewed: true, componentMappingReviewed: true,
             linkedComponents, importedMeshPaths: importedPaths.size,
             exactSourcePathMatches: mappedPaths.size,
-            originalSourceIntegrityVerified: true,
+            // This verifies uploaded GLB bytes against the immutable upload
+            // audit, NOT the original STEP/IGES/BREP file. An offline
+            // source digest comparison remains separate engineering evidence.
+            uploadedGlbIntegrityVerified: true,
+            originalCadFileChecksumVerified: false,
             // Technical review does not approve any particular physical
             // disassembly instructions or automated maintenance.
             maintenanceProcedureApproved: false,

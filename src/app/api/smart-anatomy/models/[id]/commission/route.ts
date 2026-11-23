@@ -144,7 +144,7 @@ export async function POST(
     const verifiedBindings = await db.assetMeshBinding.findMany({
       where: { modelId: id, assetId: model.assetId, componentId: { not: null } },
       select: {
-        meshPath: true, meshName: true, componentId: true,
+        id: true, meshPath: true, meshName: true, componentId: true,
         component: { select: { assetId: true } },
       },
     });
@@ -169,6 +169,13 @@ export async function POST(
       mappedPaths.add(binding.meshPath);
     }
     const linkedComponents = verifiedBindings.length;
+    const bindingFingerprint = (bindings: Array<{
+      id: string; meshPath: string | null; componentId: string | null;
+      component: {assetId: string} | null;
+    }>): string => JSON.stringify(bindings.map(item => [
+      item.id, item.meshPath, item.componentId, item.component?.assetId || null,
+    ]).sort((a,b) => String(a[0]).localeCompare(String(b[0]))));
+    const reviewedFingerprint = bindingFingerprint(verifiedBindings);
 
     // Serialize reviewer approval with engineering withdrawal using a
     // PostgreSQL row lock. A withdrawal committed after the initial
@@ -184,6 +191,21 @@ export async function POST(
       });
       if (!current || latestWithdrawal) return { status: 'withdrawn' as const };
       if (current.isActive) return { status: 'already-approved' as const };
+
+      // A draft mapping may have changed after the initial source-path audit,
+      // before this transaction obtained its model lock. Re-read the exact
+      // same fields under the shared lock used by all mapping writers.
+      // A changed revision must NEVER be approved using stale evidence.
+      const lockedBindings = await tx.assetMeshBinding.findMany({
+        where: { modelId: id, assetId: model.assetId, componentId: { not: null } },
+        select: {
+          id: true, meshPath: true, componentId: true,
+          component: { select: { assetId: true } },
+        },
+      });
+      if (bindingFingerprint(lockedBindings) !== reviewedFingerprint) {
+        return { status: 'bindings-changed' as const };
+      }
 
       const updated = await tx.assetModel.update({
         where: { id }, data: { isActive: true },
@@ -223,6 +245,11 @@ export async function POST(
     if (outcome.status==='already-approved') {
       return NextResponse.json({
         success:false,error:'CAD was approved by another engineer; refresh the review state',
+      }, {status:409});
+    }
+    if (outcome.status==='bindings-changed') {
+      return NextResponse.json({
+        success:false,error:'CAD mappings changed during review. Refresh and independently recheck the exact source nodes.',
       }, {status:409});
     }
     return NextResponse.json({

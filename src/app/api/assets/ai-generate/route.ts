@@ -5,6 +5,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin, getUserPlantId } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { aiChatCompletion, aiImageGeneration } from '@/lib/ai-client';
+import { canAccessPlant, getPlantScope } from '@/lib/plant-scope';
 
 const logger = createLogger('api:assets:ai-generate');
 
@@ -457,13 +458,25 @@ export async function POST(request: NextRequest) {
 
     // --- Parse body ---
     const body = await request.json();
-    const { machineName, additionalContext, plantId: requestedPlantId, categoryId: requestedCategoryId } = body;
+    const { machineName, additionalContext, plantId: requestedPlantId, categoryId: requestedCategoryId, functionalLocationId } = body;
 
     if (!machineName || typeof machineName !== 'string' || machineName.trim().length === 0) {
       return NextResponse.json(
         { success: false, error: 'machineName is required and must be a non-empty string' },
         { status: 400 },
       );
+    }
+
+    if (body.acknowledgeUnverified !== true) {
+      return NextResponse.json({
+        success: false,
+        error: 'Confirm that AI suggestions are unverified drafts and require engineering approval.',
+      }, { status: 400 });
+    }
+    if (!functionalLocationId || typeof functionalLocationId !== 'string') {
+      return NextResponse.json({
+        success: false, error: 'Select the complete functional location path before generating an asset.',
+      }, { status: 400 });
     }
 
     // --- Resolve plantId ---
@@ -476,6 +489,27 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'No plant specified and user has no primary plant. Please provide a plantId.' },
         { status: 400 },
       );
+    }
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, plantId)) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
+    if (!isAdmin(session) && !hasPermission(session, 'assets.functional_locations.assign')) {
+      return NextResponse.json({ success: false, error: 'Location assignment permission required' }, { status: 403 });
+    }
+    const installation = await db.functionalLocation.findUnique({
+      where: { id: functionalLocationId },
+      include: { hierarchySystem: true, hierarchyLevel: true },
+    });
+    if (!installation || installation.status !== 'active' ||
+      !installation.hierarchySystem.isActive || !installation.hierarchyLevel.isActive ||
+      !installation.hierarchyLevel.allowAssetAssignment ||
+      installation.hierarchyLevel.hierarchySystemId !== installation.hierarchySystemId ||
+      installation.plantId !== plantId) {
+      return NextResponse.json({
+        success: false, error: 'Select an active, assignable location in the selected machine plant',
+      }, { status: 400 });
     }
 
     // Validate plant exists
@@ -520,7 +554,6 @@ export async function POST(request: NextRequest) {
     // --- Prepare identifiers ---
     const shortName = generateShortName(machineData.name);
     const mainAssetTag = generateAssetTag(shortName, 1);
-    const now = new Date();
 
     // --- Summary counters ---
     const summary = {
@@ -543,23 +576,41 @@ export async function POST(request: NextRequest) {
 
     const mainAsset = await db.asset.create({
       data: {
-        name: machineData.name,
+        name: machineName.trim(),
         assetTag: mainAssetTag,
-        description: truncateText(machineData.description),
-        manufacturer: machineData.manufacturer,
-        model: machineData.model,
-        yearManufactured: now.getFullYear(),
+        description: truncateText('UNVERIFIED AI DRAFT: ' + machineData.description),
+        // Manufacturer, model, year, market value and rated limits must not
+        // be invented as if taken from a real OEM nameplate or service manual.
+        manufacturer: null,
+        model: null,
+        yearManufactured: null,
         condition: 'new',
-        status: 'operational',
+        status: 'standby',
         criticality: machineData.criticality || 'medium',
-        specification: JSON.stringify(machineData.specification || {}),
-        purchaseCost: machineData.purchaseCost || null,
-        expectedLifeYears: machineData.expectedLifeYears || null,
-        currentValue: machineData.purchaseCost || null,
+        specification: JSON.stringify({
+          aiDraft: {
+            verified: false,
+            source: 'ai_suggestion',
+            suggestedManufacturer: machineData.manufacturer,
+            suggestedModel: machineData.model,
+            suggestedSpecifications: machineData.specification || {},
+            suggestedPurchaseCost: machineData.purchaseCost || null,
+            suggestedLifeYears: machineData.expectedLifeYears || null,
+          },
+        }),
+        purchaseCost: null,
+        expectedLifeYears: null,
+        currentValue: null,
         plantId,
         categoryId,
         createdById: session.userId,
         isActive: true,
+        functionalLocationAssignments: { create: {
+          hierarchySystemId: installation.hierarchySystemId,
+          functionalLocationId: installation.id,
+          assignedById: session.userId,
+          reason: 'Selected during AI draft machine registration; engineering verification pending',
+        } },
       },
     });
 
@@ -621,7 +672,7 @@ export async function POST(request: NextRequest) {
           assetTag: ssAssetTag,
           description: truncateText(subsystem.description),
           condition: 'new',
-          status: 'operational',
+          status: 'standby',
           criticality: subsystem.criticality || 'medium',
           specification: JSON.stringify({ subsystem: true }),
           plantId,
@@ -657,7 +708,7 @@ export async function POST(request: NextRequest) {
             assetTag: compAssetTag,
             description: truncateText(component.description),
             condition: 'new',
-            status: 'operational',
+            status: 'standby',
             criticality: component.criticality || 'medium',
             specification: JSON.stringify(component.specification || {}),
             plantId,
@@ -796,14 +847,14 @@ export async function POST(request: NextRequest) {
       const pmTemplate = await db.pmTemplate.create({
         data: {
           title: template.title,
-          description: `AI-generated PM template for ${machineData.name}: ${template.title}`,
+          description: `UNVERIFIED AI proposal — engineer and planner approval required: ${template.title}`,
           type: template.type || 'preventive',
           category: template.category || 'mechanical',
           estimatedDuration: template.estimatedDuration || 2.0,
           priority: template.priority || 'medium',
           requiredSkills: JSON.stringify([]),
           requiredTools: JSON.stringify([]),
-          isActive: true,
+          isActive: false,
           createdById: session.userId,
           plantId,
         },
@@ -835,15 +886,18 @@ export async function POST(request: NextRequest) {
       await db.pmSchedule.create({
         data: {
           title: `${template.title} - ${machineData.name}`,
-          description: `Auto-generated schedule from AI template: ${template.title}`,
+          description: `UNVERIFIED AI schedule proposal. Planner must confirm task, interval, units, OEM evidence and next due date before activation.`,
           assetId: mainAsset.id,
-          frequencyType,
+          // Canonical PM frequency: calendar/time or meter/usage only.
+          // LLM suggestions are converted to inactive calendar proposals here.
+          frequencyType: 'time_day',
+          frequencyUnit: 'days',
           frequencyValue,
-          nextDueDate: new Date(now.getTime() + frequencyValue * 24 * 60 * 60 * 1000),
+          nextDueDate: null,
           estimatedDuration: template.estimatedDuration || 2.0,
           priority: template.priority || 'medium',
-          isActive: true,
-          autoGenerateWO: true,
+          isActive: false,
+          autoGenerateWO: false,
           leadDays: frequencyType === 'daily' ? 0 : frequencyType === 'weekly' ? 1 : 3,
           templateId: pmTemplate.id,
           createdById: session.userId,
@@ -1141,7 +1195,9 @@ export async function POST(request: NextRequest) {
           entityId: mainAsset.id,
           newValues: JSON.stringify({
             source: 'ai-generate',
-            machineName: machineData.name,
+            verificationStatus: 'unverified_draft',
+            machineName: machineName.trim(),
+            functionalLocationId: installation.id,
             assetTag: mainAssetTag,
             subsystems: summary.subsystems,
             components: summary.components,

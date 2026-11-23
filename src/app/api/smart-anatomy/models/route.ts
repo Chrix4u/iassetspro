@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
 
     if (sourceOrigin === 'licensed-oem' &&
         ([oemManufacturer, oemModel, drawingRevision, nameplateSerial].some(v =>
-          v.length < 2 || v.length > 140 || /[\\x00-\\x1f]/.test(v)))) {
+          v.length < 2 || v.length > 140 || [...v].some(char => char.charCodeAt(0) < 32)))) {
       return NextResponse.json({
         success: false,
         error: 'Licensed OEM CAD requires documented manufacturer, exact model, drawing revision and installed machine serial',

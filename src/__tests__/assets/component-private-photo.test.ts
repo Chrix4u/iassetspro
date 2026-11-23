@@ -16,6 +16,11 @@ describe('private plant-scoped factory photos',()=>{
   const serve=source('src/app/api/component-visuals/photo/[id]/route.ts');
   const storage=source('src/lib/component-private-photos.ts');
   expect(write).toContain('privateComponentPhotoRoot()');
+  expect(write).toContain('mode:0o700');
+  expect(write).toContain('mode:0o600');
+  expect(write).toContain('folderInfo.isSymbolicLink()');
+  expect(serve).toContain('constants.O_NOFOLLOW');
+  expect(serve).toContain('info.isFile()');
   expect(write).not.toContain("'/api/generated-assets/component-visuals/'");
   expect(storage).toContain("'private-component-photos'");
   expect(storage).not.toContain("'public','generated-assets','private-component-photos'");
@@ -24,6 +29,10 @@ describe('private plant-scoped factory photos',()=>{
   expect(serve).toContain('validPrivatePhotoFilename(filename)');
   expect(serve).toContain("'Cache-Control':'private, no-store, max-age=0'");
   expect(path.isAbsolute('/tmp/private-component-photos')).toBe(true);
+  const markerRoute=source('src/app/api/component-visuals/route.ts');
+  expect(markerRoute).toContain('db.$transaction(async tx=>');
+  expect(markerRoute).toContain('tx.componentVisual.update(');
+  expect(markerRoute).toContain('tx.auditLog.create(');
  });
  it('loads images with authenticated bearer API requests rather than unauthenticated img URLs',()=>{
   const explorer=source('src/components/digital-twin/MachineVisualExplorer.tsx');

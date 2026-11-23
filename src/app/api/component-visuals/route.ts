@@ -187,10 +187,14 @@ export async function PATCH(request:NextRequest){
         throw new Error('Invalid photo marker position or component');
       return {x,y,componentId};
     });
-    const updated=await db.componentVisual.update({where:{id},data:{hotspotData:JSON.stringify(normalized)}});
-    await db.auditLog.create({data:{userId:session.userId,action:'update',
-      entityType:'component_visual',entityId:id,
-      newValues:JSON.stringify({verifiedPhotoHotspots:normalized.length})}});
+    // Marker changes and their audit evidence must commit or roll back together.
+    const updated=await db.$transaction(async tx=>{
+      const saved=await tx.componentVisual.update({where:{id},data:{hotspotData:JSON.stringify(normalized)}});
+      await tx.auditLog.create({data:{userId:session.userId,action:'update',
+        entityType:'component_visual',entityId:id,
+        newValues:JSON.stringify({verifiedPhotoHotspots:normalized.length})}});
+      return saved;
+    });
     return NextResponse.json({success:true,data:updated});
   }catch(error){
     const msg=error instanceof Error?error.message:'Failed to save photo markers';

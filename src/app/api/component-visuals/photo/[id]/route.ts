@@ -1,5 +1,6 @@
 import {NextRequest,NextResponse} from 'next/server';
-import {readFile} from 'node:fs/promises';
+import {open} from 'node:fs/promises';
+import {constants} from 'node:fs';
 import path from 'node:path';
 import {db} from '@/lib/db';
 import {getSession,hasPermission,isAdmin} from '@/lib/auth';
@@ -36,7 +37,15 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
     return NextResponse.json({success:false,error:'Photo file is invalid'},{status:404});
   const mime=privatePhotoMime(filename);
   if(!mime)return NextResponse.json({success:false,error:'Unsupported photo type'},{status:415});
-  const data=await readFile(path.join(privateComponentPhotoRoot(),filename));
+  // Never follow a substituted symlink or serve a non-image-sized local file.
+  const handle=await open(path.join(privateComponentPhotoRoot(),filename),constants.O_RDONLY|constants.O_NOFOLLOW);
+  let data:Buffer;
+  try{
+    const info=await handle.stat();
+    if(!info.isFile()||info.size<16||info.size>10*1024*1024)
+      return NextResponse.json({success:false,error:'Factory photo not found'},{status:404});
+    data=await handle.readFile();
+  }finally{await handle.close();}
   return new NextResponse(new Uint8Array(data),{status:200,headers:{
     'Content-Type':mime,
     'Content-Length':String(data.length),

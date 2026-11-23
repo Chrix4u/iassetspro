@@ -1,5 +1,5 @@
 import {NextRequest,NextResponse} from 'next/server';
-import {mkdir,writeFile,unlink} from 'node:fs/promises';
+import {mkdir,writeFile,unlink,lstat,chmod} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {db} from '@/lib/db';
 import {privateComponentPhotoRoot} from '@/lib/component-private-photos';
@@ -45,8 +45,14 @@ export async function POST(request:NextRequest){
   const folder=privateComponentPhotoRoot();
   const filename='factory-photo-'+randomUUID()+'.'+format.extension;
   const fullPath=folder+'/'+filename;
-  await mkdir(folder,{recursive:true});
-  await writeFile(fullPath,data,{flag:'wx',mode:0o644});
+  // The persistent photo directory must never expose customer machine images
+  // to other local users; do not follow a symlinked storage root.
+  await mkdir(folder,{recursive:true,mode:0o700});
+  const folderInfo=await lstat(folder);
+  if(!folderInfo.isDirectory()||folderInfo.isSymbolicLink())
+    throw new Error('Private factory photo storage is not a real directory');
+  await chmod(folder,0o700);
+  await writeFile(fullPath,data,{flag:'wx',mode:0o600});
   try {
     const visual=await db.$transaction(async tx=>{
       await tx.componentVisual.updateMany({

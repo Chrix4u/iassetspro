@@ -33,10 +33,10 @@ describe('Asset Register responsive contract', () => {
     expect(source).toContain('className="whitespace-nowrap text-xs text-muted-foreground">Show sub-components')
   })
 
-  it('contains the wide asset table instead of widening the page', () => {
+  it('keeps the compact asset table scroll-safe without the location column', () => {
     expect(source).toContain('<div className="overflow-x-auto">')
     expect(source).toContain('<TableHead className="hidden md:table-cell">Category</TableHead>')
-    expect(source).toContain('<TableHead className="hidden lg:table-cell">Installed At</TableHead>')
+    expect(source).not.toContain('<TableHead className="hidden lg:table-cell">Installed At</TableHead>')
     expect(source).toContain('<TableHead className="hidden xl:table-cell">Condition</TableHead>')
   })
 })

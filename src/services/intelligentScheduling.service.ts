@@ -125,7 +125,7 @@ export class IntelligentSchedulingService {
         period: { start: startDate.toISOString(), end: endDate.toISOString() },
       };
     } catch (error) {
-      logger.error('Schedule optimization failed', error);
+      logger.error('Schedule optimization failed', error instanceof Error ? error : { error: String(error) });
       return {
         totalWorkOrders: 0, scheduledCount: 0, unscheduledCount: 0,
         resourceConflicts: [], recommendations: [], workforceUtilization: 0,

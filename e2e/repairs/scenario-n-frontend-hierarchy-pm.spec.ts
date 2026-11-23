@@ -189,7 +189,9 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
         await currentDialog.locator('.responsive-dialog-body').evaluate((scrollArea) => {
           const currentToolbar = scrollArea.querySelector('[data-testid="pm-assignment-task-toolbar"]');
           if (!currentToolbar) throw new Error('Current PM assignment task toolbar is missing');
-          currentToolbar.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+          const action = currentToolbar.querySelector('[data-testid="pm-original-add-task"]');
+          if (!action) throw new Error('Original PM task library button is missing');
+          action.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
           scrollArea.dispatchEvent(new Event('scroll'));
         });
         await expect(toolbar).toBeVisible({ timeout: 10_000 });
@@ -229,7 +231,9 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
         await currentDialog.locator('.responsive-dialog-body').evaluate((scrollArea) => {
           const currentToolbar = scrollArea.querySelector('[data-testid="pm-assignment-task-toolbar"]');
           if (!currentToolbar) throw new Error('Current PM assignment task toolbar is missing');
-          currentToolbar.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
+          const action = currentToolbar.querySelector('[data-testid="pm-original-add-task"]');
+          if (!action) throw new Error('Original PM task library button is missing');
+          action.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
           scrollArea.dispatchEvent(new Event('scroll'));
         });
         await expect(toolbar).toBeVisible({ timeout: 10_000 });

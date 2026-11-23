@@ -54,6 +54,9 @@ describe('AI draft asset commissioning safety guards', () => {
 
   it('preflights the unique machine code family before persisting AI draft assets and parts', () => {
     expect(route).toContain('normalizeAiMachineCode(requestedMachineCode');
+    expect(route).toContain('generateAssetTag(shortName, next)');
+    expect(route).toContain("assetTag: { startsWith: prefix }");
+    expect(route).toContain('first free root');
     expect(route).toContain('expectedAssetCodes');
     expect(route).toContain('expectedPartCodes');
     expect(route).toContain('aiAssemblyCode(mainAssetTag');

@@ -947,10 +947,11 @@ export async function POST(request: NextRequest) {
     try {
       // Build twin parameters from machine specification + subsystem info
       const twinParameters: Record<string, unknown> = {
-        ...machineData.specification,
-        manufacturer: machineData.manufacturer,
-        model: machineData.model,
-        criticality: machineData.criticality,
+        provenance: { verified: false, source: 'ai_suggestion', isPhysicalTwin: false },
+        candidateSpecifications: machineData.specification,
+        suggestedManufacturer: machineData.manufacturer,
+        suggestedModel: machineData.model,
+        suggestedCriticality: machineData.criticality,
         subsystems: machineData.subsystems.map(ss => ({
           name: ss.name,
           criticality: ss.criticality,
@@ -979,13 +980,13 @@ export async function POST(request: NextRequest) {
         data: {
           assetId: mainAsset.id,
           name: `Digital Twin - ${machineData.name}`,
-          description: `AI-generated digital twin for ${machineData.name}. Covers ${machineData.subsystems.length} subsystems with ${summary.components} tracked components.`,
+          description: `UNVERIFIED AI schematic for ${machineData.name}; not a live or OEM-certified digital twin. Covers ${machineData.subsystems.length} proposed subsystems and ${summary.components} proposed components.`,
           type: twinType,
           parameters: JSON.stringify(twinParameters),
           connections: JSON.stringify(twinConnections),
-          healthScore: 100,
+          healthScore: 0,
           syncInterval: '5min',
-          isActive: true,
+          isActive: false,
           createdById: session.userId,
         },
       });
@@ -1180,7 +1181,7 @@ export async function POST(request: NextRequest) {
         data: {
           plantId,
           name: `System Diagram - ${machineData.name}`,
-          description: `AI-generated comprehensive system diagram for ${machineData.name}. Shows ${diagramNodes.length} nodes (1 machine + ${ssCount} subsystems + ${summary.components} components) with ${diagramEdges.length} connections. Each node is labeled and zoomable. Components use specialized node types (motors, pumps, valves, sensors, etc.) for visual clarity.`,
+          description: `UNVERIFIED ILLUSTRATIVE SYSTEM DIAGRAM (NOT OEM CAD) for ${machineData.name}. Shows ${diagramNodes.length} nodes (1 machine + ${ssCount} subsystems + ${summary.components} components) with ${diagramEdges.length} connections. Each node is labeled and zoomable. Components use specialized node types (motors, pumps, valves, sensors, etc.) for visual clarity.`,
           type: 'process',
           nodes: JSON.stringify(diagramNodes),
           edges: JSON.stringify(diagramEdges),

@@ -23,7 +23,10 @@ function numericArray(input: unknown, label: string): number[] {
   return input;
 }
 
-export function convertCadImportToGlb(data: CadImport): CadGlb {
+export function convertCadImportToGlb(data: CadImport, coordinateScale = 1): CadGlb {
+  if (!Number.isFinite(coordinateScale) || coordinateScale <= 0 || coordinateScale > 1000) {
+    throw new Error('Invalid physical CAD source-to-metre scale');
+  }
   if (!data?.success || !data.root || !Array.isArray(data.meshes) ||
       !data.meshes.length || data.meshes.length > 10000) throw new Error('No supported CAD meshes');
   const binaryParts: Buffer[] = [];
@@ -55,7 +58,7 @@ export function convertCadImportToGlb(data: CadImport): CadGlb {
     if (inds.some(i => !Number.isInteger(i) || i < 0 || i >= vertexCount)) {
       throw new Error('Source CAD triangle references an invalid vertex');
     }
-    const vertices = new Float32Array(pos);
+    const vertices = new Float32Array(pos.map(value => value * coordinateScale));
     if (vertices.some(v => !Number.isFinite(v))) throw new Error('Source coordinate out of range');
     const pView = append(Buffer.from(vertices.buffer), 34962);
     const pMin = [Infinity, Infinity, Infinity], pMax = [-Infinity, -Infinity, -Infinity];

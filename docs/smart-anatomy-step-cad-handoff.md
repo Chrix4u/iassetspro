@@ -26,6 +26,7 @@ Use the imported source tree and exact path binding to associate the individual 
 
 ## Engineering boundaries
 
+- BREP geometry does not reliably declare physical units. Conversion **requires** `--units mm|cm|m|in|ft` sourced from engineering documentation. STEP/IGES are interpreted using embedded CAD units and reject manual units override. Never label unitless BREP coordinates as metres without explicit conversion.
 - The authentic GLB reflects the **provided CAD file**, which may not be the right machine serial, variant or revision. Manufacturer drawings, part catalog, units, source licensing, and signed machine inspection are still required.
 - Triangulated GLB is for visualization, selection, zoom, isolate and explode/reassemble. It is not a source for machining tolerances, lifting plans, disassembly instructions or live safety limits.
 - This first implementation limits each source input and GLB output to 25 MB. Large-machine CAD requires an isolated conversion worker and approved larger storage before release.

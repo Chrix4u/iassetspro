@@ -19,6 +19,7 @@ const evidence = {
   sourceMeshInstances: 18,
   sourceAssemblyNodes: 7,
   sourceTriangles: 3848,
+  declaredSourceUnits: 'embedded',
   outputUnits: 'meters',
   sourceAssemblyHierarchyPreserved: true,
   additionalPartsInferred: false,
@@ -44,11 +45,19 @@ describe('Private CAD offline STEP provenance handshake',()=>{
       {sourceMeshCount:0},
       {glbByteLength:7},
       {outputUnits:'millimeters'},
+      {declaredSourceUnits:'mm'},
+      {sourceFormat:'brep',declaredSourceUnits:'embedded'},
+      {sourceFormat:'brep',declaredSourceUnits:'invalid'},
       {converter:'Unknown vendor'},
       {sourceFormat:'exe'},
     ]) {
       expect(()=>validateOfflineCadEvidence({...evidence,...mutation},expected),JSON.stringify(mutation)).toThrow();
     }
+  });
+  it('permits unitless BREP only when a specific source unit is documented',()=>{
+    expect(validateOfflineCadEvidence({
+      ...evidence,sourceFormat:'brep',sourceFileName:'real-source.brep',declaredSourceUnits:'mm',
+    },expected).declaredSourceUnits).toBe('mm');
   });
   it('does not let untrusted manifest extras become authoritative audit fields',()=>{
     const x=validateOfflineCadEvidence({...evidence,actor:'admin',isVerified:true,

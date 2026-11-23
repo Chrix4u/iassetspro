@@ -21,7 +21,7 @@ import { auditedGlbMeshPaths } from '../../src/lib/smart-anatomy/mesh-source-pat
 
 type Options = Record<string, string>;
 function parseOptions(argv: string[]): Options {
-  const allowed = new Set(['input','output','origin','source-note']);
+  const allowed = new Set(['input','output','origin','source-note','units']);
   const options: Options = {};
   for (let i = 0; i < argv.length; i += 2) {
     const flag = argv[i], value = argv[i + 1];
@@ -56,6 +56,16 @@ export async function runOfflineCadHandoff(argv: string[], engineOverride?: (dat
   }
   const input = resolve(options.input), output = resolve(options.output);
   validatePaths(input, output);
+  const sourceFormat = extname(input).toLowerCase();
+  const isUnitlessBrep = sourceFormat === '.brep';
+  const sourceUnits = options.units || '';
+  const physicalScale: Record<string, number> = {mm:0.001,cm:0.01,m:1,in:0.0254,ft:0.3048};
+  if (isUnitlessBrep && !Object.prototype.hasOwnProperty.call(physicalScale,sourceUnits)) {
+    throw new Error('BREP has no reliable embedded units: declare --units mm|cm|m|in|ft from engineering documentation');
+  }
+  if (!isUnitlessBrep && options.units) {
+    throw new Error('STEP/IGES embedded units are interpreted by OpenCascade; do not override with --units');
+  }
   const stat = await lstat(input);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size < 20 ||
       stat.size > MAX_PRIVATE_CAD_UPLOAD_BYTES) {
@@ -85,7 +95,7 @@ export async function runOfflineCadHandoff(argv: string[], engineOverride?: (dat
         ? engine.ReadIgesFile(raw, triangulation)
         : engine.ReadBrepFile(raw, triangulation);
   }
-  const built = convertCadImportToGlb(source);
+  const built = convertCadImportToGlb(source, isUnitlessBrep ? physicalScale[sourceUnits] : 1);
   const inspected = inspectSelfContainedGlb(built.glb);
   const paths = auditedGlbMeshPaths(built.glb);
   if (!inspected.meshCount || !paths.size || paths.size !== built.instanceCount) {
@@ -108,6 +118,7 @@ export async function runOfflineCadHandoff(argv: string[], engineOverride?: (dat
     sourceMeshInstances: built.instanceCount,
     sourceAssemblyNodes: built.sourceNodeCount,
     sourceTriangles: built.triangleCount,
+    declaredSourceUnits: isUnitlessBrep ? sourceUnits : 'embedded',
     outputUnits: 'meters',
     sourceAssemblyHierarchyPreserved: true,
     additionalPartsInferred: false,

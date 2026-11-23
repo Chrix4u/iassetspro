@@ -45,6 +45,16 @@ describe('Offline real CAD assembly -> private GLB handoff',()=>{
     expect(json.meshes).toHaveLength(2);
   });
 
+  it('scales unitless BREP millimetres to actual glTF metres with strict limits',()=>{
+    const raw=convertCadImportToGlb(source);
+    const mm=convertCadImportToGlb(source,0.001);
+    const rawPositions=extractJson(raw.glb).accessors.find((a:{min?:number[]})=>a.min);
+    const converted=extractJson(mm.glb).accessors.find((a:{min?:number[]})=>a.min);
+    expect(rawPositions.max[0]).toBe(1);
+    expect(converted.max[0]).toBeCloseTo(0.001);
+    expect(()=>convertCadImportToGlb(source,0)).toThrow(/scale/);
+    expect(()=>convertCadImportToGlb(source,NaN)).toThrow(/scale/);
+  });
   it('never invents a hidden part and preserves repeated-color source surfaces as visual-only nodes',()=>{
     const copied: CadImport = {
       ...source,

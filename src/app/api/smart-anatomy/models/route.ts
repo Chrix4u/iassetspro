@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const geometry = inspectSelfContainedGlb(bytes);
     const checksum = createHash('sha256').update(bytes).digest('hex');
-    let conversionEvidence = null;
+    let conversionEvidence: ReturnType<typeof validateOfflineCadEvidence> | null = null;
     if (sourceManifest !== null) {
       if (typeof sourceManifest === 'string' || !sourceManifest.name.toLowerCase().endsWith('.json') ||
           sourceManifest.size > 32 * 1024 || sourceManifest.size < 20) {

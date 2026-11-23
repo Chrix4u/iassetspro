@@ -20,6 +20,7 @@ export interface OfflineCadEvidence {
   sourceMeshInstances: number;
   sourceAssemblyNodes: number;
   sourceTriangles: number;
+  declaredSourceUnits: string;
   outputUnits: string;
   sourceAssemblyHierarchyPreserved: true;
   additionalPartsInferred: false;
@@ -62,6 +63,9 @@ export function validateOfflineCadEvidence(
       !boundedInteger(data.sourceMeshInstances,1,25000) ||
       !boundedInteger(data.sourceAssemblyNodes,1,20000) ||
       !boundedInteger(data.sourceTriangles,1,10000000) ||
+      !(data.sourceFormat === 'brep'
+        ? ['mm','cm','m','in','ft'].includes(String(data.declaredSourceUnits))
+        : data.declaredSourceUnits === 'embedded') ||
       data.outputUnits !== 'meters' ||
       data.sourceAssemblyHierarchyPreserved !== true ||
       data.additionalPartsInferred !== false ||
@@ -83,6 +87,7 @@ export function validateOfflineCadEvidence(
     sourceMeshInstances:data.sourceMeshInstances as number,
     sourceAssemblyNodes:data.sourceAssemblyNodes as number,
     sourceTriangles:data.sourceTriangles as number,
+    declaredSourceUnits: String(data.declaredSourceUnits),
     outputUnits:'meters',
     sourceAssemblyHierarchyPreserved:true,
     additionalPartsInferred:false,

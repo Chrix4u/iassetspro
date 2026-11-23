@@ -43,7 +43,11 @@ describe('Smart Anatomy protected GLB commissioning and access contracts', () =>
     expect(commission).toContain('if (!verifiedBindings.length)');
     expect(commission).toContain('importedPaths.has(binding.meshPath)');
     expect(commission).toContain('binding.component?.assetId !== model.assetId');
-    expect(commission).toContain('originalSourceIntegrityVerified: true');
+    expect(commission).toContain('uploadedGlbIntegrityVerified: true');
+    expect(commission).toContain('originalCadFileChecksumVerified: false');
+    expect(commission).not.toContain('originalSourceIntegrityVerified: true');
+    expect(commission).toContain('unmappedSourceMeshCount');
+    expect(commission).toContain('bindingFingerprint(lockedBindings)');
     expect(commission).toContain('model.uploadedById === session.userId');
     expect(commission).toContain('independentEngineerReview: true');
     expect(commission).toContain('sourceReviewed !== true');

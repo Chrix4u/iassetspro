@@ -237,6 +237,66 @@ describe('Smart Anatomy source-backed engineering commissioning',()=>{
     expect(mocked.auditCreate).not.toHaveBeenCalled();
   });
 
+  it('requires independent original STEP bytes for converted licensed OEM drawing approval',async()=>{
+    const originalDigest='b'.repeat(64);
+    const declared={
+      checksum:sha256,sourceOrigin:'licensed-oem',
+      sourceMachineClaim:{
+        oemManufacturer:'Siemens',oemModel:'S100-M2',
+        nameplateSerial:'SN-001',drawingRevision:'Rev B',
+      },
+      conversionEvidence:{
+        sourceSha256:originalDigest,
+        glbSha256:sha256,
+      },
+    };
+    mocked.findUnique.mockResolvedValue({
+      id,assetId:'asset1',uploadedById:'uploader1',
+      filePath:'/api/smart-anatomy/models/'+id+'/file',
+      fileSize:bytes.length,isActive:false,
+      asset:{plantId:'plant1',manufacturer:'SIEMENS',model:'s100-m2',serialNumber:'sn-001'},
+    });
+    const sourceAudit=(verified:boolean)=>mocked.auditFindFirst.mockImplementation(
+      ({where}:{where:{action:string}})=>Promise.resolve(
+        where.action==='withdraw'?null:
+        where.action==='source_verified'?(verified ? {newValues:JSON.stringify({
+          sourceSha256:originalDigest,
+          independentlyComparedOriginalCadBytes:true,
+          verifiedById:'checker-2',
+        })} : null):
+        {newValues:JSON.stringify(declared)},
+      ),
+    );
+    sourceAudit(false);
+    const rejected=await POST(request(),ctx);
+    expect(rejected.status).toBe(409);
+    expect((await rejected.json()).error).toContain('Original manufacturer CAD bytes');
+    expect(mocked.modelUpdate).not.toHaveBeenCalled();
+    expect(mocked.auditCreate).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    sourceAudit(true);
+    mocked.queryRaw.mockResolvedValue([{id}]);
+    mocked.findUnique.mockResolvedValue({
+      id,assetId:'asset1',uploadedById:'uploader1',
+      filePath:'/api/smart-anatomy/models/'+id+'/file',
+      fileSize:bytes.length,isActive:false,
+      asset:{plantId:'plant1',manufacturer:'SIEMENS',model:'s100-m2',serialNumber:'sn-001'},
+    });
+    mocked.bindingFindMany.mockResolvedValue([{
+      id:'binding-1',meshPath:path,componentId:'registered-part',
+      component:{assetId:'asset1'},
+    }]);
+    mocked.modelUpdate.mockResolvedValue({id,isActive:true});
+    mocked.auditCreate.mockResolvedValue({id:'approved-source-record'});
+    const approved=await POST(request(),ctx);
+    expect(approved.status).toBe(200);
+    const audit=JSON.parse(mocked.auditCreate.mock.calls[0][0].data.newValues);
+    expect(audit.originalCadFileChecksumVerified).toBe(true);
+    expect(audit.manufacturerSourceAuthenticityCertified).toBe(false);
+    expect(audit.maintenanceProcedureApproved).toBe(false);
+  });
+
   it('does not resurrect a withdrawn revision if withdrawal commits after the initial check',async()=>{
     let withdrawnChecks=0;
     mocked.auditFindFirst.mockImplementation(({where}:{where:{action:string}})=>{

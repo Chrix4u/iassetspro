@@ -14,6 +14,9 @@ describe('PM usability refinements', () => {
     expect(planner).toContain("closest('.responsive-dialog-body')");
     expect(planner).toContain("addEventListener('scroll', checkVisibility");
     expect(planner).toContain('pm-assignment-task-toolbar');
+    expect(planner).toContain('pm-original-add-task');
+    expect(planner).toContain("document.addEventListener('scroll', checkVisibility, true)");
+    expect(planner).toContain('new ResizeObserver(scheduleCheck)');
   });
 
   it('uses one native date-input helper for all shared date fields', () => {

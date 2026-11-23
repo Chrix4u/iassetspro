@@ -22,7 +22,7 @@ interface CadSourceEvidence {
   drawingRevision: string | null;
   nameplateSerial: string | null;
   conversionSidecarPresent: boolean;
-  originalCadFileChecksumVerified: false;
+  originalCadFileChecksumVerified: boolean;
 }
 
 export interface PrivateCadModel {
@@ -66,6 +66,9 @@ export function PrivateCadUploader({
   const [reviewStatus, setReviewStatus] = useState<'checking' | 'awaiting-review' | 'withdrawn'>('checking');
   const [independentReviewerEligible, setIndependentReviewerEligible] = useState(false);
   const [sourceEvidence, setSourceEvidence] = useState<CadSourceEvidence | null>(null);
+  const [originalSourceFile, setOriginalSourceFile] = useState<File | null>(null);
+  const [verifyingSource, setVerifyingSource] = useState(false);
+  const [statusRevision, setStatusRevision] = useState(0);
 
   useEffect(() => {
     if (!selected?.id || selected.isActive) {
@@ -96,7 +99,7 @@ export function PrivateCadUploader({
       setIndependentReviewerEligible(result.data?.independentReviewerEligible === true);
     }).catch(()=>{if(!cancelled)setReviewStatus('checking');});
     return ()=>{cancelled=true;};
-  }, [selected?.id, selected?.isActive]);
+  }, [selected?.id, selected?.isActive, statusRevision]);
 
   const loadModels = useCallback(async () => {
     try {
@@ -154,11 +157,40 @@ export function PrivateCadUploader({
     }
   };
 
+  const verifyOriginalSource = async () => {
+    if (!selected?.id || !canManage || !independentReviewerEligible ||
+        !sourceEvidence?.conversionSidecarPresent || !originalSourceFile ||
+        originalSourceFile.size > 25 * 1024 * 1024 || verifyingSource) return;
+    setVerifyingSource(true);
+    try {
+      const form = new FormData();
+      form.set('sourceFile', originalSourceFile);
+      const result = await api.post<{
+        originalSourceDigestMatched:boolean;
+        originalCadStored:boolean;
+        manufacturerAuthenticityCertified:boolean;
+      }>('/api/smart-anatomy/models/' + encodeURIComponent(selected.id) + '/verify-source', form);
+      if (!result.success || !result.data?.originalSourceDigestMatched) {
+        throw new Error(result.error || 'Original source file verification failed');
+      }
+      setOriginalSourceFile(null);
+      setStatusRevision(v => v + 1);
+      toast.success('Original CAD bytes match the conversion manifest. Manufacturer authenticity still requires engineering review.');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Could not verify original CAD source');
+    } finally {
+      setVerifyingSource(false);
+    }
+  };
+
   const approve = async () => {
     if (!selected || !canManage || !independentReviewerEligible ||
         approving || selected.isActive ||
         !sourceReviewed || !geometryReviewed || !componentMappingReviewed ||
         !unmappedGeometryReviewed ||
+        (sourceEvidence?.sourceOrigin === 'licensed-oem' &&
+          sourceEvidence.conversionSidecarPresent &&
+          !sourceEvidence.originalCadFileChecksumVerified) ||
         reviewNote.trim().length < 12) return;
     setApproving(true);
     try {
@@ -315,6 +347,35 @@ export function PrivateCadUploader({
                 The source file's original checksum, licensed drawing revision and identity of the physical machine
                 are not automatically certified by a GLB checksum. Verify against retained OEM documentation.
               </p>
+              {sourceEvidence.conversionSidecarPresent && (
+                <div className="space-y-2 rounded-md border border-slate-600 p-2">
+                  <p className="text-xs text-slate-200">
+                    Original STEP/IGES/BREP byte comparison:
+                    <strong className="ml-1">
+                      {sourceEvidence.originalCadFileChecksumVerified ? 'Verified against conversion manifest' : 'Pending independent source check'}
+                    </strong>
+                  </p>
+                  {!sourceEvidence.originalCadFileChecksumVerified && independentReviewerEligible && (
+                    <>
+                      <Input type="file"
+                        aria-label="Choose original CAD source for independent checksum verification"
+                        accept=".step,.stp,.igs,.iges,.brep"
+                        onChange={event => setOriginalSourceFile(event.target.files?.[0] || null)}
+                      />
+                      <Button type="button" size="sm" variant="outline"
+                        disabled={verifyingSource || !originalSourceFile ||
+                          originalSourceFile.size > 25 * 1024 * 1024}
+                        onClick={() => void verifyOriginalSource()}>
+                        {verifyingSource ? 'Checking source SHA-256…' : 'Verify retained original CAD source'}
+                      </Button>
+                    </>
+                  )}
+                  <p className="text-[11px] text-slate-400">
+                    The source file is hashed transiently. It is not saved by this action.
+                    A matching checksum alone does not certify an OEM license or drawing authenticity.
+                  </p>
+                </div>
+              )}
             </div>
           )}
           {!independentReviewerEligible && (
@@ -341,6 +402,9 @@ export function PrivateCadUploader({
           <Button type="button" size="sm" onClick={()=>void approve()}
             disabled={!independentReviewerEligible || approving || !sourceReviewed ||
               !geometryReviewed || !componentMappingReviewed || !unmappedGeometryReviewed ||
+              (sourceEvidence?.sourceOrigin === 'licensed-oem' &&
+                sourceEvidence.conversionSidecarPresent &&
+                !sourceEvidence.originalCadFileChecksumVerified) ||
               reviewNote.trim().length < 12}>
             {approving?'Recording engineer review…':'Approve model for visual inspection'}
           </Button>

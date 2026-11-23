@@ -542,7 +542,26 @@ export async function POST(request: NextRequest) {
 
     // --- Prepare identifiers ---
     const shortName = generateShortName(machineName.trim()) || 'MACHINE';
-    const mainAssetTag = machineCode || generateAssetTag(shortName, 1);
+    // For automatic codes, choose the first free root. Repeating a machine
+    // name must never silently reuse AI-...-001 from an earlier asset.
+    let mainAssetTag = machineCode;
+    if (!mainAssetTag) {
+      const prefix = `AI-${shortName}-`;
+      const registered = await db.asset.findMany({
+        where: { assetTag: { startsWith: prefix } },
+        select: { assetTag: true }, take: 1001,
+      });
+      const used = new Set(registered.map(item => item.assetTag));
+      for (let next = 1; next <= 999; next++) {
+        const candidate = generateAssetTag(shortName, next);
+        if (!used.has(candidate)) { mainAssetTag = candidate; break; }
+      }
+      if (!mainAssetTag) {
+        return NextResponse.json({
+          success: false, error: 'No unused automatic machine code remains; enter a unique code.',
+        }, { status: 409 });
+      }
+    }
 
     // Preflight the complete proposed code family so an existing code fails
     // clearly before any machine/assembly/spare record is saved.

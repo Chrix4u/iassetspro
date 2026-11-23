@@ -6,6 +6,7 @@ import { getSession, hasPermission, isAdmin, getUserPlantId } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { aiChatCompletion, aiImageGeneration } from '@/lib/ai-client';
 import { canAccessPlant, getPlantScope } from '@/lib/plant-scope';
+import { aiAssemblyCode, aiComponentCode, aiPartCode, normalizeAiMachineCode } from '@/lib/ai-asset-codes';
 
 const logger = createLogger('api:assets:ai-generate');
 
@@ -273,28 +274,6 @@ function generateAssetTag(shortName: string, index: number): string {
   return `AI-${shortName}-${String(index).padStart(3, '0')}`;
 }
 
-function generateComponentCode(shortName: string, ssIndex: number, compIndex: number): string {
-  return `AI-${shortName}-${String(ssIndex + 1).padStart(2, '0')}-${String(compIndex + 1).padStart(2, '0')}`;
-}
-
-async function generateUniqueItemCode(): Promise<string> {
-  // Get the next sequence number
-  const lastItem = await db.inventoryItem.findFirst({
-    where: { itemCode: { startsWith: 'SP-AI-' } },
-    orderBy: { itemCode: 'desc' },
-    select: { itemCode: true },
-  });
-
-  let nextNum = 1;
-  if (lastItem) {
-    const parts = lastItem.itemCode.split('-');
-    const lastNum = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastNum)) nextNum = lastNum + 1;
-  }
-
-  return `SP-AI-${String(nextNum).padStart(4, '0')}`;
-}
-
 function frequencyTypeToValue(freqType: string): number {
   switch (freqType) {
     case 'daily': return 1;
@@ -458,7 +437,7 @@ export async function POST(request: NextRequest) {
 
     // --- Parse body ---
     const body = await request.json();
-    const { machineName, additionalContext, plantId: requestedPlantId, categoryId: requestedCategoryId, functionalLocationId } = body;
+    const { machineName, machineCode: requestedMachineCode, additionalContext, plantId: requestedPlantId, categoryId: requestedCategoryId, functionalLocationId } = body;
 
     if (!machineName || typeof machineName !== 'string' || machineName.trim().length === 0) {
       return NextResponse.json(
@@ -476,6 +455,16 @@ export async function POST(request: NextRequest) {
     if (!functionalLocationId || typeof functionalLocationId !== 'string') {
       return NextResponse.json({
         success: false, error: 'Select the complete functional location path before generating an asset.',
+      }, { status: 400 });
+    }
+
+    // Validate the owner-specified internal code before any AI or database writes.
+    let machineCode: string | null = null;
+    try {
+      machineCode = requestedMachineCode ? normalizeAiMachineCode(requestedMachineCode, '') : null;
+    } catch (error) {
+      return NextResponse.json({
+        success: false, error: error instanceof Error ? error.message : 'Invalid machine code',
       }, { status: 400 });
     }
 
@@ -552,8 +541,38 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Prepare identifiers ---
-    const shortName = generateShortName(machineData.name);
-    const mainAssetTag = generateAssetTag(shortName, 1);
+    const shortName = generateShortName(machineName.trim()) || 'MACHINE';
+    const mainAssetTag = machineCode || generateAssetTag(shortName, 1);
+
+    // Preflight the complete proposed code family so an existing code fails
+    // clearly before any machine/assembly/spare record is saved.
+    const expectedAssetCodes = [mainAssetTag];
+    const expectedPartCodes: string[] = [];
+    for (let assemblyIndex = 0; assemblyIndex < machineData.subsystems.length; assemblyIndex++) {
+      expectedAssetCodes.push(aiAssemblyCode(mainAssetTag, assemblyIndex));
+      const components = machineData.subsystems[assemblyIndex].components || [];
+      for (let componentIndex = 0; componentIndex < components.length; componentIndex++) {
+        expectedAssetCodes.push(aiComponentCode(mainAssetTag, assemblyIndex, componentIndex));
+        const spareParts = components[componentIndex].spareParts || [];
+        for (let partIndex = 0; partIndex < spareParts.length; partIndex++) {
+          expectedPartCodes.push(aiPartCode(mainAssetTag, assemblyIndex, componentIndex, partIndex));
+        }
+      }
+    }
+    const [usedAsset, usedInventory] = await Promise.all([
+      db.asset.findFirst({
+        where: { assetTag: { in: expectedAssetCodes } }, select: { assetTag: true },
+      }),
+      expectedPartCodes.length ? db.inventoryItem.findFirst({
+        where: { itemCode: { in: expectedPartCodes } }, select: { itemCode: true },
+      }) : Promise.resolve(null),
+    ]);
+    if (usedAsset || usedInventory) {
+      return NextResponse.json({
+        success: false,
+        error: `Machine code family already exists (${usedAsset?.assetTag || usedInventory?.itemCode}). Choose another machine code.`,
+      }, { status: 409 });
+    }
 
     // --- Summary counters ---
     const summary = {
@@ -665,7 +684,7 @@ export async function POST(request: NextRequest) {
       summary.subsystems++;
 
       // Create subsystem asset (child of main asset)
-      const ssAssetTag = generateAssetTag(shortName, 2 + ssIdx);
+      const ssAssetTag = aiAssemblyCode(mainAssetTag, ssIdx);
       const subsystemAsset = await db.asset.create({
         data: {
           name: subsystem.name,
@@ -687,7 +706,7 @@ export async function POST(request: NextRequest) {
       bomEntries.push({
         parentId: mainAsset.id,
         childAssetId: subsystemAsset.id,
-        partNumber: `BOM-${shortName}-${ssIdx + 1}`,
+        partNumber: ssAssetTag,
         quantity: 1,
         unit: 'each',
         specification: JSON.stringify({ type: 'subsystem', description: subsystem.description }),
@@ -698,8 +717,8 @@ export async function POST(request: NextRequest) {
         const component = subsystem.components[compIdx];
         summary.components++;
 
-        const compAssetTag = `${ssAssetTag}-${compIdx + 1}`;
-        const componentCode = generateComponentCode(shortName, ssIdx, compIdx);
+        const componentCode = aiComponentCode(mainAssetTag, ssIdx, compIdx);
+        const compAssetTag = componentCode;
 
         // Create component asset (child of subsystem)
         const componentAsset = await db.asset.create({
@@ -723,7 +742,7 @@ export async function POST(request: NextRequest) {
         bomEntries.push({
           parentId: subsystemAsset.id,
           childAssetId: componentAsset.id,
-          partNumber: `BOM-${componentCode}`,
+          partNumber: componentCode,
           quantity: 1,
           unit: 'each',
           specification: JSON.stringify(component.specification || {}),
@@ -743,11 +762,12 @@ export async function POST(request: NextRequest) {
         });
 
         // Collect spare parts (deduplicate by code)
-        for (const sparePart of component.spareParts || []) {
-          if (!usedSpareCodes.has(sparePart.code)) {
-            usedSpareCodes.add(sparePart.code);
+        for (const [partIdx, sparePart] of (component.spareParts || []).entries()) {
+          const partCode = aiPartCode(mainAssetTag, ssIdx, compIdx, partIdx);
+          if (!usedSpareCodes.has(partCode)) {
+            usedSpareCodes.add(partCode);
             inventoryItemsToCreate.push({
-              itemCode: await generateUniqueItemCode(),
+              itemCode: partCode,
               name: sparePart.name,
               description: `UNVERIFIED AI DRAFT: proposed spare part for ${component.name}. Engineer/storekeeper must confirm OEM code, unit, and cost.`,
               category: sparePart.category || 'spare_part',
@@ -1214,6 +1234,7 @@ export async function POST(request: NextRequest) {
             machineName: machineName.trim(),
             functionalLocationId: installation.id,
             assetTag: mainAssetTag,
+            codeFormat: 'machine-A##-C##-P##',
             subsystems: summary.subsystems,
             components: summary.components,
             inventoryItems: summary.inventoryItems,

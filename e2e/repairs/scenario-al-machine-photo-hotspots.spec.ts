@@ -30,7 +30,8 @@ test('UAT: private machine photo upload, registered part hotspot and plant-safe 
   const pixel=Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAOqvCwAAAABJRU5ErkJggg==','base64');
   const uploaded=await request.post('/api/component-visuals/upload',{headers,multipart:{
-    assetId,componentId:component.id,title:'Synthetic 1px access-control test',
+    assetId,componentId:component.id,title:'Synthetic front elevation access-control test',
+    viewpoint:'front',
     file:{name:'ci-synthetic-test.png',mimeType:'image/png',buffer:pixel},
   }});
   expect(uploaded.status(),await uploaded.text()).toBe(201);
@@ -39,6 +40,14 @@ test('UAT: private machine photo upload, registered part hotspot and plant-safe 
   expect(photo.imageUrl).toMatch(/^\/private-component-photos\/factory-photo-/);
   expect(photo.assetId).toBe(assetId);
   expect(photo.componentId).toBe(component.id);
+  expect(JSON.parse(photo.cameraData).viewpoint).toBe('front');
+
+  const invalidElevation=await request.post('/api/component-visuals/upload',{headers,multipart:{
+    assetId,componentId:component.id,title:'Rejected unknown elevation',
+    viewpoint:'diagonal-fictional',
+    file:{name:'test-invalid-angle.png',mimeType:'image/png',buffer:pixel},
+  }});
+  expect(invalidElevation.status()).toBe(400);
 
   const privateRoute='/api/component-visuals/photo/'+encodeURIComponent(photo.id);
   expect((await request.get(privateRoute)).status()).toBe(401);
@@ -70,4 +79,21 @@ test('UAT: private machine photo upload, registered part hotspot and plant-safe 
     id:photo.id,hotspotData:[{componentId:component.id,x:1.5,y:0.5}],
   }});
   expect(wrongPosition.status()).toBe(400);
+
+  // A second elevation must not delete or overwrite the first photo/hotspots.
+  const another=await request.post('/api/component-visuals/upload',{headers,multipart:{
+    assetId,componentId:component.id,title:'Synthetic top elevation test',
+    viewpoint:'top',
+    file:{name:'ci-second-test.png',mimeType:'image/png',buffer:pixel},
+  }});
+  expect(another.status(),await another.text()).toBe(201);
+  const top=(await another.json()).data;
+  expect(JSON.parse(top.cameraData).viewpoint).toBe('top');
+  expect(top.id).not.toBe(photo.id);
+  const listBoth=await request.get('/api/component-visuals?assetId='+encodeURIComponent(assetId),{headers});
+  expect(listBoth.status()).toBe(200);
+  const byId=new Map((await listBoth.json()).data.map((v:{id:string})=>[v.id,v]));
+  expect(JSON.parse((byId.get(photo.id) as {cameraData:string}).cameraData).viewpoint).toBe('front');
+  expect(JSON.parse((byId.get(top.id) as {cameraData:string}).cameraData).viewpoint).toBe('top');
+  expect(JSON.parse((byId.get(photo.id) as {hotspotData:string}).hotspotData)).toEqual(markers);
 });

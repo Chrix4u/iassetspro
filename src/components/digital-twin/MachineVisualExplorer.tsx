@@ -25,6 +25,7 @@ import type { AssetMeshBinding } from './InteractiveMesh';
 import type { ImportedAnatomyMesh } from './anatomyBindings';
 import { suggestAnatomyMappings } from './anatomyMappingSuggestions';
 import { wrapSchematicLabel } from '@/lib/machine-schematic-label';
+import { MACHINE_PHOTO_VIEWPOINTS, machinePhotoViewLabel, type MachinePhotoViewpoint } from '@/lib/machine-photo-views';
 
 type MachineComponent = {
   id: string;
@@ -106,6 +107,7 @@ type ComponentVisual = {
   title: string;
   imageUrl: string;
   hotspotData?: string | null;
+  cameraData?: string | null;
   sourceProvider?: string | null;
   thumbnailUrl?: string | null;
   zoomLevel: number;
@@ -531,6 +533,8 @@ export function MachineVisualExplorer({
   const [photoTitle,setPhotoTitle]=useState('');
   const [photoUrl,setPhotoUrl]=useState('');
   const [photoFile,setPhotoFile]=useState<File|null>(null);
+  const [photoViewpoint,setPhotoViewpoint]=useState<MachinePhotoViewpoint>('front');
+  const [selectedPhotoId,setSelectedPhotoId]=useState<string|null>(null);
   const [privatePhoto,setPrivatePhoto]=useState<{id:string;url:string}|null>(null);
   const [photoSaving,setPhotoSaving]=useState(false);
   const [markerEditing,setMarkerEditing]=useState(false);
@@ -985,16 +989,22 @@ export function MachineVisualExplorer({
     : mode === 'exploded'
       ? 'exploded'
       : 'technical_2d';
+  const photoOptions=useMemo(()=>{
+    const selectedPhotos=visuals.filter(v=>v.visualType==='photo'&&
+      (selectedId?v.componentId===selectedId:!v.componentId&&v.assetId===asset.id));
+    if(selectedPhotos.length||!selectedId)return selectedPhotos;
+    return visuals.filter(v=>v.visualType==='photo'&&!v.componentId&&v.assetId===asset.id);
+  },[visuals,selectedId,asset.id]);
   const currentVisual = useMemo(() => {
-    const target = visuals.filter((visual) =>
-      visual.visualType === desiredType
-      && (selectedId ? visual.componentId === selectedId : !visual.componentId && visual.assetId === asset.id)
-    );
-    const matched=target.find((visual) => visual.isPrimary) || target[0] || null;
-    if(matched||mode!=='photo')return matched;
-    const machinePhotos=visuals.filter(v=>v.visualType==='photo'&&!v.componentId&&v.assetId===asset.id);
-    return machinePhotos.find(v=>v.isPrimary)||machinePhotos[0]||null;
-  }, [visuals, desiredType, selectedId, asset.id, mode]);
+    if(mode==='photo'){
+      // Explicit elevation selection never crosses machines or part scope.
+      return photoOptions.find(v=>v.id===selectedPhotoId)
+        ||photoOptions.find(v=>v.isPrimary)||photoOptions[0]||null;
+    }
+    const target=visuals.filter(v=>v.visualType===desiredType&&
+      (selectedId?v.componentId===selectedId:!v.componentId&&v.assetId===asset.id));
+    return target.find(v=>v.isPrimary)||target[0]||null;
+  },[visuals,desiredType,selectedId,asset.id,mode,photoOptions,selectedPhotoId]);
 
   const fallbackImage = mode === 'photo' || (!selectedId && mode === 'realistic') ? asset.imageUrl || null : null;
   // Real factory photo bytes are plant-scoped and require an authenticated API fetch.
@@ -1032,12 +1042,14 @@ export function MachineVisualExplorer({
     }
     setPhotoSaving(true);
     try{
-      const res=await api.post('/api/component-visuals',{assetId:asset.id,componentId:selectedId,
+      const res=await api.post<{id:string}>('/api/component-visuals',{assetId:asset.id,componentId:selectedId,
         visualType:'photo',title:photoTitle.trim()||'Verified factory photo',
-        imageUrl:photoUrl.trim(),sourceProvider:'customer_supplied',isPrimary:true});
+        imageUrl:photoUrl.trim(),sourceProvider:'customer_supplied',
+        cameraData:{viewpoint:photoViewpoint},isPrimary:true});
       if(!res.success)throw Error(res.error||'Cannot attach photo');
       toast.success('Factory photo registered; now place part markers on the image.');
       setPhotoUrl('');setPhotoTitle('');await loadData();setMode('photo');
+      setSelectedPhotoId(res.data?.id||null);
     }catch(error){toast.error(error instanceof Error?error.message:'Cannot attach photo');}
     finally{setPhotoSaving(false);}
   };
@@ -1052,12 +1064,13 @@ export function MachineVisualExplorer({
       form.append('assetId',asset.id);
       if(selectedId)form.append('componentId',selectedId);
       form.append('title',photoTitle.trim()||photoFile.name);
+      form.append('viewpoint',photoViewpoint);
       form.append('file',photoFile);
-      const res=await api.post('/api/component-visuals/upload',form,{timeout:60000});
+      const res=await api.post<{id:string}>('/api/component-visuals/upload',form,{timeout:60000});
       if(!res.success)throw Error(res.error||'Factory photograph upload failed');
       toast.success('Factory photo uploaded; link the actual registered assemblies using markers.');
       setPhotoTitle('');setPhotoFile(null);
-      await loadData();setMode('photo');
+      await loadData();setMode('photo');setSelectedPhotoId(res.data?.id||null);
     }catch(error){toast.error(error instanceof Error?error.message:'Photo upload failed');}
     finally{setPhotoSaving(false);}
   };
@@ -1453,7 +1466,24 @@ export function MachineVisualExplorer({
                   <p className="rounded-md border border-cyan-200 bg-cyan-50 p-2 text-xs text-cyan-950 dark:border-cyan-800 dark:bg-cyan-950/20 dark:text-cyan-100">
                     Factory/OEM photographs are factual references only for the photographed machine. Click marked assemblies to drill down; upload an OEM GLB model in 3D Model for actual mesh geometry and engineering explosions.
                   </p>
+                  {photoOptions.length>0&&<div role="group" aria-label="Machine photograph elevations"
+                    className="flex flex-wrap gap-2 rounded-md border p-2">
+                    {photoOptions.map(photo=><Button key={photo.id} type="button" size="sm"
+                      variant={currentVisual?.id===photo.id?'default':'outline'}
+                      aria-pressed={currentVisual?.id===photo.id}
+                      onClick={()=>{setSelectedPhotoId(photo.id);setMarkerEditing(false);setZoom(1);setPan({x:0,y:0});}}
+                      className="max-w-full min-w-0 whitespace-normal break-words text-left h-auto py-2">
+                      {machinePhotoViewLabel(photo.cameraData)} · {photo.title}
+                    </Button>)}
+                  </div>}
                   {canManagePhotos&&<div className="flex flex-wrap items-center gap-2">
+                    <div className="min-w-[145px] space-y-1"><Label className="text-xs">Photo elevation</Label>
+                      <Select value={photoViewpoint} onValueChange={value=>setPhotoViewpoint(value as MachinePhotoViewpoint)}>
+                        <SelectTrigger aria-label="Photograph elevation"><SelectValue/></SelectTrigger>
+                        <SelectContent>{MACHINE_PHOTO_VIEWPOINTS.map(view=>
+                          <SelectItem key={view} value={view}>{view==='other'?'Other / unspecified':view.charAt(0).toUpperCase()+view.slice(1)}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
                     <Input className="min-w-0 flex-1 cursor-pointer" type="file" accept="image/jpeg,image/png,image/webp"
                       aria-label="Choose genuine factory or OEM machine photograph"
                       onChange={e=>setPhotoFile(e.target.files?.[0]||null)}/>

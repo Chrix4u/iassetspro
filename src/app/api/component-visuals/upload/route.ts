@@ -3,6 +3,7 @@ import {mkdir,writeFile,unlink,lstat,chmod} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
 import {db} from '@/lib/db';
 import {privateComponentPhotoRoot} from '@/lib/component-private-photos';
+import {isMachinePhotoViewpoint} from '@/lib/machine-photo-views';
 import {getSession,hasPermission,isAdmin} from '@/lib/auth';
 import {getPlantScope,canAccessPlantStrict} from '@/lib/plant-scope';
 
@@ -24,6 +25,9 @@ export async function POST(request:NextRequest){
   const assetId=String(form.get('assetId')||'').trim();
   const componentId=String(form.get('componentId')||'').trim()||null;
   const title=String(form.get('title')||'').trim().slice(0,160)||'Factory reference photograph';
+  const viewpoint=String(form.get('viewpoint')||'other').trim();
+  if(!isMachinePhotoViewpoint(viewpoint))
+    return NextResponse.json({success:false,error:'Choose a valid machine photo elevation'},{status:400});
   const file=form.get('file');
   if(!assetId||!file||typeof file==='string'||!('arrayBuffer' in file))
     return NextResponse.json({success:false,error:'Machine and photo file are required'},{status:400});
@@ -62,7 +66,8 @@ export async function POST(request:NextRequest){
       const created=await tx.componentVisual.create({data:{
         assetId:asset.id,componentId,visualType:'photo',title,
         imageUrl:'/private-component-photos/'+filename,
-        sourceProvider:'uploaded',isPrimary:true,createdById:session.userId,
+        sourceProvider:'uploaded',cameraData:JSON.stringify({viewpoint}),
+        isPrimary:true,createdById:session.userId,
       }});
       await tx.auditLog.create({data:{userId:session.userId,action:'create',
         entityType:'component_visual',entityId:created.id,plantId:asset.plantId,

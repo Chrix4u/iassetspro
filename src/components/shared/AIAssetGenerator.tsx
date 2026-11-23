@@ -674,11 +674,15 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
           <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => handleClose(false)}>Close</Button>
             <Button
-              onClick={() => { handleClose(false); }}
+              onClick={() => {
+                const assetId = result.asset.id;
+                handleClose(false);
+                navigate('assets', { id: assetId });
+              }}
               className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
             >
               <CheckCircle2 className="h-4 w-4" />
-              Done
+              Review Asset & Location
             </Button>
           </div>
         </>

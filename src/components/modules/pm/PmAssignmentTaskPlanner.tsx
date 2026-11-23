@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { LibraryBig, Loader2, Plus } from 'lucide-react';
 import { api } from '@/lib/api';
 import {
@@ -35,22 +35,44 @@ export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId 
   const setPickerOpen = onPickerOpenChange ?? setInternalPickerOpen;
   const toolbarRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (stage !== 'tasks' || !onToolbarVisibleChange) return;
     const toolbar = toolbarRef.current;
     const scroller = toolbar?.closest('.responsive-dialog-body');
     if (!toolbar || !scroller) return;
+    let frame = 0;
     const checkVisibility = () => {
+      // The mobile Sheet and desktop Dialog mount different scroll containers.
+      // Measure the currently mounted toolbar, not a stale viewport or a
+      // partially clipped button, before showing the fixed header shortcut.
       const button = toolbar.getBoundingClientRect();
       const viewport = scroller.getBoundingClientRect();
-      onToolbarVisibleChange(button.top >= viewport.top && button.bottom <= viewport.bottom);
+      onToolbarVisibleChange(
+        viewport.height > 0 && button.top >= viewport.top - 1 && button.bottom <= viewport.bottom + 1,
+      );
+    };
+    const scheduleMeasure = () => {
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(checkVisibility);
     };
     checkVisibility();
     scroller.addEventListener('scroll', checkVisibility, { passive: true });
-    window.addEventListener('resize', checkVisibility);
+    window.addEventListener('resize', scheduleMeasure);
+    // Scrolling alone is insufficient when the sheet remounts, the footer
+    // resizes or imported task rows change the dialog height.
+    const intersections = new IntersectionObserver(checkVisibility, {
+      root: scroller, threshold: [0, 0.99, 1],
+    });
+    intersections.observe(toolbar);
+    const sizes = new ResizeObserver(scheduleMeasure);
+    sizes.observe(scroller);
+    sizes.observe(toolbar);
     return () => {
+      window.cancelAnimationFrame(frame);
+      intersections.disconnect();
+      sizes.disconnect();
       scroller.removeEventListener('scroll', checkVisibility);
-      window.removeEventListener('resize', checkVisibility);
+      window.removeEventListener('resize', scheduleMeasure);
     };
   }, [stage, onToolbarVisibleChange]);
   const [meters, setMeters] = useState<PmAssignmentAssetMeterOption[]>([]);

@@ -14,6 +14,14 @@ describe('PM usability refinements', () => {
     expect(planner).toContain("closest('.responsive-dialog-body')");
     expect(planner).toContain("addEventListener('scroll', checkVisibility");
     expect(planner).toContain('pm-assignment-task-toolbar');
+    // A Sheet/Dialog viewport switch remounts the toolbar without any scroll
+    // event; respond to layout/intersection changes, not stale scroll state.
+    expect(planner).toContain('useLayoutEffect(() => {');
+    expect(planner).toContain('new IntersectionObserver(checkVisibility');
+    expect(planner).toContain('new ResizeObserver(scheduleMeasure)');
+    expect(planner).toContain('intersections.disconnect()');
+    expect(planner).toContain('sizes.disconnect()');
+    expect(planner).toContain('cancelAnimationFrame(frame)');
   });
 
   it('uses one native date-input helper for all shared date fields', () => {

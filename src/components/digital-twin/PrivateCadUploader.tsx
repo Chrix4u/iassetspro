@@ -58,6 +58,7 @@ export function PrivateCadUploader({
   const [sourceReviewed, setSourceReviewed] = useState(false);
   const [geometryReviewed, setGeometryReviewed] = useState(false);
   const [componentMappingReviewed, setComponentMappingReviewed] = useState(false);
+  const [unmappedGeometryReviewed, setUnmappedGeometryReviewed] = useState(false);
   const [approving, setApproving] = useState(false);
   const [withdrawing, setWithdrawing] = useState(false);
   const [withdrawOpen, setWithdrawOpen] = useState(false);
@@ -157,12 +158,14 @@ export function PrivateCadUploader({
     if (!selected || !canManage || !independentReviewerEligible ||
         approving || selected.isActive ||
         !sourceReviewed || !geometryReviewed || !componentMappingReviewed ||
+        !unmappedGeometryReviewed ||
         reviewNote.trim().length < 12) return;
     setApproving(true);
     try {
       const res = await api.post<{id:string;isActive:boolean}>(
         '/api/smart-anatomy/models/' + encodeURIComponent(selected.id) + '/commission',
-        {sourceReviewed,geometryReviewed,componentMappingReviewed,reviewNote:reviewNote.trim()});
+        {sourceReviewed,geometryReviewed,componentMappingReviewed,
+          unmappedNodesAcknowledged:unmappedGeometryReviewed,reviewNote:reviewNote.trim()});
       if(!res.success || !res.data?.isActive) {
         throw new Error(res.error || 'Engineering model review was not approved');
       }
@@ -171,6 +174,7 @@ export function PrivateCadUploader({
       setSourceReviewed(false);
       setGeometryReviewed(false);
       setComponentMappingReviewed(false);
+      setUnmappedGeometryReviewed(false);
       await loadModels();
       toast.success('CAD model accepted for technical inspection. Maintenance procedures remain separately controlled.');
     } catch (error) {
@@ -323,6 +327,7 @@ export function PrivateCadUploader({
             {label:'Model origin, licence or site ownership checked',checked:sourceReviewed,change:setSourceReviewed},
             {label:'Imported geometry reviewed for the selected machine',checked:geometryReviewed,change:setGeometryReviewed},
             {label:'CAD nodes mapped to the correct registered components',checked:componentMappingReviewed,change:setComponentMappingReviewed},
+            {label:'I reviewed any unlinked CAD surfaces; they remain visual-only and cannot target PM/WO until mapped',checked:unmappedGeometryReviewed,change:setUnmappedGeometryReviewed},
           ].map(item=>(
             <label key={item.label} className="flex cursor-pointer items-start gap-2 text-xs text-slate-200">
               <input type="checkbox" checked={item.checked}
@@ -335,7 +340,8 @@ export function PrivateCadUploader({
             className="border-slate-700 text-slate-100"/>
           <Button type="button" size="sm" onClick={()=>void approve()}
             disabled={!independentReviewerEligible || approving || !sourceReviewed ||
-              !geometryReviewed || !componentMappingReviewed || reviewNote.trim().length < 12}>
+              !geometryReviewed || !componentMappingReviewed || !unmappedGeometryReviewed ||
+              reviewNote.trim().length < 12}>
             {approving?'Recording engineer review…':'Approve model for visual inspection'}
           </Button>
         </div>

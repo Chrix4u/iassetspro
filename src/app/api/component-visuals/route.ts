@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 import { getSession, hasPermission, isAdmin, type SessionData } from '@/lib/auth';
+import { isMachinePhotoViewpoint } from '@/lib/machine-photo-views';
 
 async function canAccessAsset(
   request: NextRequest,
@@ -93,6 +94,10 @@ export async function POST(request: NextRequest) {
     if(visualType==='photo'&&!/^https:\/\//i.test(String(imageUrl||''))&&
       !String(imageUrl||'').startsWith('/api/files/')){
       return NextResponse.json({success:false,error:'Use an approved HTTPS photo URL or stored file URL'},{status:400});
+    }
+    if (visualType === 'photo' && cameraData != null &&
+        !isMachinePhotoViewpoint((cameraData as {viewpoint?:unknown})?.viewpoint)) {
+      return NextResponse.json({success:false,error:'Choose a valid machine photo elevation'},{status:400});
     }
     if (!title || !imageUrl) {
       return NextResponse.json({ success: false, error: 'title and imageUrl are required' }, { status: 400 });

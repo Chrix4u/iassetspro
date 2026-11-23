@@ -41,6 +41,17 @@ describe('AI draft asset commissioning safety guards', () => {
     expect(schedule).not.toContain('autoGenerateWO: true');
   });
 
+  it('quarantines speculative AI spare parts from active inventory and costs', () => {
+    const start = route.indexOf('await db.inventoryItem.createMany({');
+    expect(start).toBeGreaterThan(-1);
+    const inventory = route.slice(start, route.indexOf('summary.inventoryItems =', start));
+    expect(inventory).toContain('isActive: false');
+    expect(route).toContain('suggestedManufacturerPartCode: sparePart.code');
+    expect(route).toContain('suggestedUnitCost: sparePart.unitCost');
+    expect(route).toContain('minStockLevel: 0');
+    expect(route).toContain("lifecycleStatus: 'uncommissioned'");
+  });
+
   it('makes actual plant path and explicit concept approval mandatory in the generator modal', () => {
     expect(dialog).toContain('<FunctionalLocationPicker');
     expect(dialog).toContain('plantId={plantId}');

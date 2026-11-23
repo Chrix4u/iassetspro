@@ -37,6 +37,10 @@ export function PrivateCadUploader({
   const [name, setName] = useState('');
   const [origin, setOrigin] = useState('licensed-oem');
   const [sourceNote, setSourceNote] = useState('');
+  const [oemManufacturer, setOemManufacturer] = useState('');
+  const [oemModel, setOemModel] = useState('');
+  const [drawingRevision, setDrawingRevision] = useState('');
+  const [nameplateSerial, setNameplateSerial] = useState('');
   const [saving, setSaving] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
   const [reviewNote, setReviewNote] = useState('');
@@ -92,7 +96,8 @@ export function PrivateCadUploader({
   useEffect(() => { void loadModels(); }, [loadModels]);
 
   const save = async () => {
-    if (!canManage || !file || !name.trim() || !sourceNote.trim() || saving) return;
+    if (!canManage || !file || !name.trim() || !sourceNote.trim() || saving ||
+        (origin === 'licensed-oem' && [oemManufacturer, oemModel, drawingRevision, nameplateSerial].some(v => v.trim().length < 2))) return;
     setSaving(true);
     try {
       const form = new FormData();
@@ -100,6 +105,12 @@ export function PrivateCadUploader({
       form.set('name', name.trim());
       form.set('sourceOrigin', origin);
       form.set('sourceNote', sourceNote.trim());
+      if (origin === 'licensed-oem') {
+        form.set('oemManufacturer', oemManufacturer.trim());
+        form.set('oemModel', oemModel.trim());
+        form.set('drawingRevision', drawingRevision.trim());
+        form.set('nameplateSerial', nameplateSerial.trim());
+      }
       form.set('file', file);
       if (sourceManifest) form.set('sourceManifest', sourceManifest);
       const res = await api.post<PrivateCadModel>('/api/smart-anatomy/models', form);
@@ -111,6 +122,10 @@ export function PrivateCadUploader({
       setSourceManifest(null);
       setName('');
       setSourceNote('');
+      setOemManufacturer('');
+      setOemModel('');
+      setDrawingRevision('');
+      setNameplateSerial('');
       setShowUpload(false);
       await loadModels();
       toast.success('Private 3D CAD stored for engineer mapping; not yet commissioned.');
@@ -331,6 +346,38 @@ export function PrivateCadUploader({
               </SelectContent>
             </Select>
           </div>
+          {origin === 'licensed-oem' && (
+            <div className="sm:col-span-2 grid grid-cols-1 gap-3 sm:grid-cols-2 rounded-md border border-amber-600/50 p-3">
+              <p className="sm:col-span-2 text-xs text-amber-200">
+                Manufacturer CAD identity must match the installed machine's nameplate.
+                These values are source claims until a separate engineer verifies them.
+              </p>
+              <div className="space-y-1">
+                <Label htmlFor="cad-oem-manufacturer" className="text-xs text-slate-300">OEM Manufacturer</Label>
+                <Input id="cad-oem-manufacturer" maxLength={140} value={oemManufacturer}
+                  onChange={event => setOemManufacturer(event.target.value)}
+                  placeholder="Manufacturer on nameplate" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cad-oem-model" className="text-xs text-slate-300">Exact Machine Model / Variant</Label>
+                <Input id="cad-oem-model" maxLength={140} value={oemModel}
+                  onChange={event => setOemModel(event.target.value)}
+                  placeholder="Exact manufacturer model" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cad-revision" className="text-xs text-slate-300">CAD Drawing Revision</Label>
+                <Input id="cad-revision" maxLength={140} value={drawingRevision}
+                  onChange={event => setDrawingRevision(event.target.value)}
+                  placeholder="Drawing number or revision" />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="cad-nameplate-serial" className="text-xs text-slate-300">Installed Machine Serial</Label>
+                <Input id="cad-nameplate-serial" maxLength={140} value={nameplateSerial}
+                  onChange={event => setNameplateSerial(event.target.value)}
+                  placeholder="Serial number from machine nameplate" />
+              </div>
+            </div>
+          )}
           <div className="space-y-1">
             <Label className="text-xs text-slate-300">Source evidence / licence notes</Label>
             <Input aria-label="CAD provenance and licence note" value={sourceNote}
@@ -342,7 +389,9 @@ export function PrivateCadUploader({
             <Button type="button" size="sm"
               disabled={saving || !file || file.size > 25*1024*1024 ||
                 (sourceManifest !== null && (sourceManifest.size < 20 || sourceManifest.size > 32*1024)) ||
-                name.trim().length < 3 || sourceNote.trim().length < 8}
+                name.trim().length < 3 || sourceNote.trim().length < 8 ||
+                (origin === 'licensed-oem' &&
+                  [oemManufacturer, oemModel, drawingRevision, nameplateSerial].some(v => v.trim().length < 2))}
               onClick={() => void save()}>
               {saving ? 'Validating and storing…' : 'Validate & upload privately'}
             </Button>

@@ -38,19 +38,40 @@ export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId 
   useEffect(() => {
     if (stage !== 'tasks' || !onToolbarVisibleChange) return;
     const toolbar = toolbarRef.current;
-    const scroller = toolbar?.closest('.responsive-dialog-body');
-    if (!toolbar || !scroller) return;
+    if (!toolbar) return;
+    let frame: number | null = null;
     const checkVisibility = () => {
-      const button = toolbar.getBoundingClientRect();
+      // Measure the actual Add Task button, not the taller descriptive row.
+      // On narrow phones the row may be clipped while its action is still visible.
+      const scroller = toolbar.closest('.responsive-dialog-body');
+      const action = toolbar.querySelector('[data-testid="pm-original-add-task"]');
+      if (!scroller || !action) {
+        onToolbarVisibleChange(false);
+        return;
+      }
+      const button = action.getBoundingClientRect();
       const viewport = scroller.getBoundingClientRect();
       onToolbarVisibleChange(button.top >= viewport.top && button.bottom <= viewport.bottom);
     };
+    const scheduleCheck = () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => { frame = null; checkVisibility(); });
+    };
     checkVisibility();
-    scroller.addEventListener('scroll', checkVisibility, { passive: true });
-    window.addEventListener('resize', checkVisibility);
+    // Capture scrolling from the currently mounted dialog/sheet. Desktop-to-
+    // mobile remounts may replace the .responsive-dialog-body without changing
+    // this task component's props, so a listener on the old scroller goes stale.
+    document.addEventListener('scroll', checkVisibility, true);
+    window.addEventListener('resize', scheduleCheck);
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleCheck);
+    observer?.observe(toolbar);
+    const scroller = toolbar.closest('.responsive-dialog-body');
+    if (scroller) observer?.observe(scroller);
     return () => {
-      scroller.removeEventListener('scroll', checkVisibility);
-      window.removeEventListener('resize', checkVisibility);
+      document.removeEventListener('scroll', checkVisibility, true);
+      window.removeEventListener('resize', scheduleCheck);
+      observer?.disconnect();
+      if (frame !== null) cancelAnimationFrame(frame);
     };
   }, [stage, onToolbarVisibleChange]);
   const [meters, setMeters] = useState<PmAssignmentAssetMeterOption[]>([]);
@@ -131,7 +152,7 @@ export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId 
           <p className="text-[11px] text-muted-foreground">{stage === 'tasks' ? 'Choose the Task Library work that belongs to this machine or part. Trigger settings are configured in the next step.' : 'Configure the trigger for every task independently. Each task can use TBM, UBM, CBM or FBM without changing the other tasks on this target.'}</p>
           <p className="mt-1 text-xs"><span className="text-muted-foreground">Tasks:</span> <strong>{tasks.length}</strong> <span className="mx-1.5 text-muted-foreground">·</span> <span className="text-muted-foreground">Total estimated time:</span> <strong>{formatPmAssignmentEstimatedTime(totalMinutes)}</strong>{totalMinutes > 0 && <span className="ml-1 text-[10px] text-muted-foreground">({(totalMinutes / 60).toFixed(2)} h)</span>}</p>
         </div>
-        {stage === 'tasks' && <Button type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} disabled={disabled || !assetId || !targetConfirmed} className="h-8 w-full text-xs sm:w-auto">
+        {stage === 'tasks' && <Button data-testid="pm-original-add-task" type="button" variant="outline" size="sm" onClick={() => setPickerOpen(true)} disabled={disabled || !assetId || !targetConfirmed} className="h-8 w-full text-xs sm:w-auto">
           <Plus className="mr-1.5 h-4 w-4" /> Add Task from Library
         </Button>}
       </div>

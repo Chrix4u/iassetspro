@@ -82,4 +82,43 @@ describe('private CAD review status, permission and history',()=>{
     const response=await GET(req(),ctx);
     expect((await response.json()).data.status).toBe('approved');
   });
+  it('shows protected manufacturer drawing identifiers only to an authorized plant manager',async()=>{
+    mocked.auditFindFirst.mockImplementation(({where}:{where:{action:string}})=>Promise.resolve(
+      where.action==='withdraw'?null:{newValues:JSON.stringify({
+        sourceOrigin:'licensed-oem',
+        sourceNote:'OEM-issued assembly revision B with recorded source license',
+        sourceMachineClaim:{
+          oemManufacturer:'Siemens',oemModel:'S100-M2',drawingRevision:'Rev B',
+          nameplateSerial:'SN-001',
+        },
+        conversionEvidence:{sourceSha256:'a'.repeat(64)},
+      })},
+    ));
+    const manager=await GET(req(),ctx);
+    expect(manager.status).toBe(200);
+    const protectedData=(await manager.json()).data.sourceEvidence;
+    expect(protectedData.oemManufacturer).toBe('Siemens');
+    expect(protectedData.nameplateSerial).toBe('SN-001');
+    expect(protectedData.drawingRevision).toBe('Rev B');
+    expect(protectedData.conversionSidecarPresent).toBe(true);
+    expect(protectedData.originalCadFileChecksumVerified).toBe(false);
+
+    vi.clearAllMocks();
+    mocked.getSession.mockReturnValue({userId:'reader-1'});
+    mocked.hasPermission.mockImplementation((_:unknown,permission:string)=>permission==='digital_twin.view');
+    mocked.isAdmin.mockReturnValue(false);
+    mocked.getPlantScope.mockResolvedValue({denyAccess:false,plantId:'plant-1'});
+    mocked.canAccessPlantStrict.mockReturnValue(true);
+    mocked.modelFindUnique.mockResolvedValue({
+      id,uploadedById:'uploader-1',
+      filePath:'/api/smart-anatomy/models/'+id+'/file',
+      isActive:false,asset:{plantId:'plant-1'},
+    });
+    mocked.auditFindFirst.mockResolvedValue(null);
+    const viewer=await GET(req(),ctx);
+    expect(viewer.status).toBe(200);
+    expect((await viewer.json()).data.sourceEvidence).toBeNull();
+    expect(mocked.auditFindFirst).toHaveBeenCalledTimes(1);
+  });
+
 });

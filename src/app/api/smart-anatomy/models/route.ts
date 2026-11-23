@@ -5,6 +5,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { inspectSelfContainedGlb, MAX_PRIVATE_CAD_UPLOAD_BYTES } from '@/lib/smart-anatomy/validate-glb';
+import { validateOfflineCadEvidence } from '@/lib/smart-anatomy/offline-cad-evidence';
 import { assertPrivateCadStorageReady, privateCadFilePath, privateCadStorageRoot } from '@/lib/smart-anatomy/private-cad-storage';
 import { MultipartUploadError, MAX_CAD_MULTIPART_OVERHEAD, readBoundedMultipart } from '@/lib/smart-anatomy/limited-multipart';
 
@@ -58,6 +59,7 @@ export async function POST(req: NextRequest) {
     const name = String(form.get('name') || '').trim();
     const sourceOrigin = String(form.get('sourceOrigin') || '');
     const sourceNote = String(form.get('sourceNote') || '').trim();
+    const sourceManifest = form.get('sourceManifest');
 
     if (!file || typeof file === 'string' || !file.name.toLowerCase().endsWith('.glb') ||
         !Number.isSafeInteger(file.size) || file.size <= 0 || file.size > MAX_PRIVATE_CAD_UPLOAD_BYTES) {
@@ -66,7 +68,7 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
     if (!assetId || name.length < 3 || name.length > 160 ||
-        !['licensed-oem', 'site-owned-scan', 'original-training'].includes(sourceOrigin) ||
+        !['licensed-oem', 'site-owned-scan', 'site-owned-design', 'original-training'].includes(sourceOrigin) ||
         sourceNote.length < 8 || sourceNote.length > 1000) {
       return NextResponse.json({
         success: false, error: 'Asset, model name and documented legal model origin are required',
@@ -85,6 +87,24 @@ export async function POST(req: NextRequest) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const geometry = inspectSelfContainedGlb(bytes);
     const checksum = createHash('sha256').update(bytes).digest('hex');
+    let conversionEvidence = null;
+    if (sourceManifest !== null) {
+      if (typeof sourceManifest === 'string' || !sourceManifest.name.toLowerCase().endsWith('.json') ||
+          sourceManifest.size > 32 * 1024 || sourceManifest.size < 20) {
+        return NextResponse.json({success:false,error:'Offline CAD evidence must be a small JSON sidecar'}, {status:400});
+      }
+      try {
+        const evidenceText = await sourceManifest.text();
+        const evidence = JSON.parse(evidenceText) as unknown;
+        conversionEvidence = validateOfflineCadEvidence(evidence, {
+          glbSha256: checksum, glbByteLength: bytes.byteLength, sourceOrigin,
+        });
+      } catch {
+        return NextResponse.json({
+          success:false,error:'Offline CAD sidecar does not match the selected GLB and source category',
+        }, {status:400});
+      }
+    }
     const id = randomUUID();
     const filePath = '/api/smart-anatomy/models/' + id + '/file';
     storedFile = privateCadFilePath(root, id);
@@ -109,6 +129,7 @@ export async function POST(req: NextRequest) {
             entityType: 'asset_model', entityId: id,
             newValues: JSON.stringify({
               assetId, sourceOrigin, sourceNote, checksum,
+              conversionEvidence,
               status: 'awaiting-engineer-commissioning',
               ...geometry,
             }),

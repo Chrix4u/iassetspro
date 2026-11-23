@@ -33,6 +33,7 @@ export function PrivateCadUploader({
 }) {
   const [models, setModels] = useState<PrivateCadModel[]>([]);
   const [file, setFile] = useState<File | null>(null);
+  const [sourceManifest, setSourceManifest] = useState<File | null>(null);
   const [name, setName] = useState('');
   const [origin, setOrigin] = useState('licensed-oem');
   const [sourceNote, setSourceNote] = useState('');
@@ -100,12 +101,14 @@ export function PrivateCadUploader({
       form.set('sourceOrigin', origin);
       form.set('sourceNote', sourceNote.trim());
       form.set('file', file);
+      if (sourceManifest) form.set('sourceManifest', sourceManifest);
       const res = await api.post<PrivateCadModel>('/api/smart-anatomy/models', form);
       if (!res.success || !res.data?.id) {
         throw new Error(res.error || 'CAD upload failed');
       }
       onSelect(res.data);
       setFile(null);
+      setSourceManifest(null);
       setName('');
       setSourceNote('');
       setShowUpload(false);
@@ -300,8 +303,16 @@ export function PrivateCadUploader({
               onChange={event => {
                 const next=event.target.files?.[0] || null;
                 setFile(next);
+                setSourceManifest(null);
                 if (next) setName(next.name.replace(/\.glb$/i, ''));
               }} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs text-slate-300">Offline CAD source sidecar (optional)</Label>
+            <Input aria-label="Choose offline CAD source manifest" type="file"
+              accept=".json,application/json" className="text-slate-100"
+              onChange={event => setSourceManifest(event.target.files?.[0] || null)} />
+            <p className="text-[11px] text-slate-400">For STEP/IGES/BREP conversion, select the matching .glb.source.json file (max 32 KB); it will be checked against the uploaded GLB checksum.</p>
           </div>
           <div className="space-y-1">
             <Label className="text-xs text-slate-300">Model identification</Label>
@@ -315,6 +326,7 @@ export function PrivateCadUploader({
               <SelectContent>
                 <SelectItem value="licensed-oem">Licensed OEM model</SelectItem>
                 <SelectItem value="site-owned-scan">Site-owned engineering scan</SelectItem>
+                <SelectItem value="site-owned-design">Site-owned engineering CAD design</SelectItem>
                 <SelectItem value="original-training">Original internal training geometry</SelectItem>
               </SelectContent>
             </Select>
@@ -328,8 +340,9 @@ export function PrivateCadUploader({
           <div className="sm:col-span-2 flex items-center justify-between gap-2">
             <p className="text-[11px] text-amber-200">Stored privately · engineer review required · no automatic PM or repair linkage</p>
             <Button type="button" size="sm"
-              disabled={saving || !file || file.size > 25*1024*1024 || name.trim().length < 3 ||
-                sourceNote.trim().length < 8}
+              disabled={saving || !file || file.size > 25*1024*1024 ||
+                (sourceManifest !== null && (sourceManifest.size < 20 || sourceManifest.size > 32*1024)) ||
+                name.trim().length < 3 || sourceNote.trim().length < 8}
               onClick={() => void save()}>
               {saving ? 'Validating and storing…' : 'Validate & upload privately'}
             </Button>

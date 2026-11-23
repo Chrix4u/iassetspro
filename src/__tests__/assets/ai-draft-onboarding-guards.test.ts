@@ -61,7 +61,8 @@ describe('AI draft asset commissioning safety guards', () => {
     expect(route).toContain('aiPartCode(mainAssetTag');
     expect(route).toContain('Choose another machine code');
     expect(dialog).toContain('payload.machineCode = machineCode.trim().toUpperCase()');
-    expect(dialog).toContain('ST-001-A01-C01-P01');
+    expect(dialog).toContain('-A01-C01-P01');
+    expect(dialog).toContain('e.g. ST-001');
   });
 
   it('makes actual plant path and explicit concept approval mandatory in the generator modal', () => {

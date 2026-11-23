@@ -95,7 +95,9 @@ describe('Smart Anatomy source-backed engineering commissioning',()=>{
     expect((await res.json()).data.linkedComponents).toBe(1);
     expect(mocked.transaction).toHaveBeenCalledOnce();
     const audit=JSON.parse(mocked.auditCreate.mock.calls[0][0].data.newValues);
-    expect(audit.originalSourceIntegrityVerified).toBe(true);
+    expect(audit.uploadedGlbIntegrityVerified).toBe(true);
+    expect(audit.originalCadFileChecksumVerified).toBe(false);
+    expect(audit).not.toHaveProperty('originalSourceIntegrityVerified');
     expect(audit.exactSourcePathMatches).toBe(1);
     expect(audit.maintenanceProcedureApproved).toBe(false);
   });
@@ -136,7 +138,9 @@ describe('Smart Anatomy source-backed engineering commissioning',()=>{
       expect(audit.independentEngineerReview).toBe(true);
       expect(audit.maintenanceProcedureApproved).toBe(false);
       expect(audit.exactSourcePathMatches).toBe(1);
-      expect(audit.originalSourceIntegrityVerified).toBe(true);
+      expect(audit.uploadedGlbIntegrityVerified).toBe(true);
+    expect(audit.originalCadFileChecksumVerified).toBe(false);
+    expect(audit).not.toHaveProperty('originalSourceIntegrityVerified');
     } finally {
       await writeFile(join(folder,id+'.glb'),bytes);
     }

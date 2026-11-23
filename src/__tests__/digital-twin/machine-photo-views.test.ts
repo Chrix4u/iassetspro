@@ -4,13 +4,14 @@ import {MACHINE_PHOTO_VIEWPOINTS, isMachinePhotoViewpoint,
   machinePhotoViewpoint, machinePhotoViewLabel} from '@/lib/machine-photo-views';
 
 describe('explicit machine-photo camera elevations', () => {
-  it('accepts only the six supported labels, including unspecified legacy photos', () => {
-    expect(MACHINE_PHOTO_VIEWPOINTS).toEqual(['front','back','left','right','top','other']);
+  it('accepts all six elevations plus the unspecified legacy fallback', () => {
+    expect(MACHINE_PHOTO_VIEWPOINTS).toEqual(['front','back','left','right','top','bottom','other']);
     expect(isMachinePhotoViewpoint('front')).toBe(true);
     expect(isMachinePhotoViewpoint('back')).toBe(true);
     expect(isMachinePhotoViewpoint('left')).toBe(true);
     expect(isMachinePhotoViewpoint('right')).toBe(true);
     expect(isMachinePhotoViewpoint('top')).toBe(true);
+    expect(isMachinePhotoViewpoint('bottom')).toBe(true);
     expect(isMachinePhotoViewpoint('FRONT')).toBe(false);
     expect(isMachinePhotoViewpoint('../../untrusted')).toBe(false);
     expect(isMachinePhotoViewpoint(null)).toBe(false);
@@ -23,6 +24,7 @@ describe('explicit machine-photo camera elevations', () => {
     expect(machinePhotoViewpoint('{"viewpoint":"up"}')).toBe('other');
     expect(machinePhotoViewpoint(null)).toBe('other');
     expect(machinePhotoViewLabel('{"viewpoint":"top"}')).toBe('Top elevation');
+    expect(machinePhotoViewLabel('{"viewpoint":"bottom"}')).toBe('Bottom elevation');
     expect(machinePhotoViewLabel(null)).toBe('Unspecified view');
   });
 

@@ -19,6 +19,7 @@
     "backfill:tool-requests": "bun scripts/backfill-tool-request-numbers.ts",
     "test": "vitest run",
     "cad:convert:step": "bun scripts/smart-anatomy/convert-offline-step.ts",
+    "cad:verify:source": "bun scripts/smart-anatomy/verify-offline-cad-source.ts",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:repairs-uat": "playwright test --project=repairs-uat --workers=1 --timeout=120000",

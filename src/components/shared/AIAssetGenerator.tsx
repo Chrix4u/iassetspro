@@ -677,7 +677,7 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
               onClick={() => {
                 const assetId = result.asset.id;
                 handleClose(false);
-                navigate('assets', { id: assetId });
+                navigate('assets-machines', { id: assetId });
               }}
               className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
             >

@@ -47,7 +47,7 @@ export async function GET(
       drawingRevision: string | null;
       nameplateSerial: string | null;
       conversionSidecarPresent: boolean;
-      originalCadFileChecksumVerified: false;
+      originalCadFileChecksumVerified: boolean;
     } | null = null;
     if (canInspectSourceEvidence) {
       const record = await db.auditLog.findFirst({
@@ -63,6 +63,30 @@ export async function GET(
           conversionEvidence?: unknown;
         };
         const identity = declared.sourceMachineClaim || {};
+        let sourceChecksumVerified = false;
+        if (declared.conversionEvidence && typeof declared.conversionEvidence === 'object') {
+          const evidence = declared.conversionEvidence as { sourceSha256?: unknown };
+          const sourceVerifiedAudit = await db.auditLog.findFirst({
+            where: {entityType:'asset_model',entityId:id,action:'source_verified'},
+            select: {newValues:true},
+            orderBy: {createdAt:'desc'},
+          });
+          try {
+            const verified = JSON.parse(sourceVerifiedAudit?.newValues || '{}') as {
+              sourceSha256?: unknown;
+              independentlyComparedOriginalCadBytes?: unknown;
+              verifiedById?: unknown;
+            };
+            sourceChecksumVerified =
+              typeof evidence.sourceSha256 === 'string' &&
+              verified.sourceSha256 === evidence.sourceSha256 &&
+              verified.independentlyComparedOriginalCadBytes === true &&
+              typeof verified.verifiedById === 'string' &&
+              verified.verifiedById !== model.uploadedById;
+          } catch {
+            sourceChecksumVerified = false;
+          }
+        }
         const restricted = (value: unknown): string | null =>
           typeof value === 'string' && value.length <= 140 ? value : null;
         sourceEvidence = {
@@ -74,7 +98,7 @@ export async function GET(
           drawingRevision: restricted(identity.drawingRevision),
           nameplateSerial: restricted(identity.nameplateSerial),
           conversionSidecarPresent: Boolean(declared.conversionEvidence),
-          originalCadFileChecksumVerified: false,
+          originalCadFileChecksumVerified: sourceChecksumVerified,
         };
       } catch {
         // Invalid original audit evidence is never treated as verified.

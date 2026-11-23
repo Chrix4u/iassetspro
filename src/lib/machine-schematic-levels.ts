@@ -24,9 +24,13 @@ export function buildSchematicLevels<T extends SchematicPart>(components: readon
   const levels: T[][] = [];
   let current = roots;
   while (current.length) {
-    const fresh = current.filter((component) => !visited.has(component.id));
+    const fresh: T[] = [];
+    for (const component of current) {
+      if (visited.has(component.id)) continue;
+      visited.add(component.id);
+      fresh.push(component);
+    }
     if (!fresh.length) break;
-    fresh.forEach((component) => visited.add(component.id));
     levels.push(fresh);
     current = fresh.flatMap((component) => byParent.get(component.id) ?? []);
   }

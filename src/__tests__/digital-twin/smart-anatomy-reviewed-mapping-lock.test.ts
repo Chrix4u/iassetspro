@@ -8,6 +8,7 @@ const mocked=vi.hoisted(()=>({
   modelFindUnique:vi.fn(),bindingFindUnique:vi.fn(),bindingFindFirst:vi.fn(),
   bindingCreate:vi.fn(),bindingUpdate:vi.fn(),bindingDelete:vi.fn(),
   assetFindUnique:vi.fn(),componentFindUnique:vi.fn(),auditFindFirst:vi.fn(),auditCreate:vi.fn(),
+  transaction:vi.fn(),queryRaw:vi.fn(),
 }));
 vi.mock('@/lib/auth',()=>({
   getSession:mocked.getSession,hasPermission:mocked.hasPermission,isAdmin:mocked.isAdmin,
@@ -28,6 +29,7 @@ vi.mock('@/lib/db',()=>({
     asset:{findUnique:mocked.assetFindUnique},
     componentRegistry:{findUnique:mocked.componentFindUnique},
     auditLog:{findFirst:mocked.auditFindFirst,create:mocked.auditCreate},
+    $transaction:mocked.transaction,
   },
 }));
 
@@ -70,6 +72,18 @@ beforeEach(()=>{
   mocked.bindingFindFirst.mockResolvedValue(null);
   mocked.bindingCreate.mockResolvedValue({id:'new-binding'});
   mocked.auditCreate.mockResolvedValue({id:'audit-1'});
+  mocked.queryRaw.mockResolvedValue([{id:modelId}]);
+  mocked.transaction.mockImplementation(async (callback:(tx:unknown)=>Promise<unknown>) =>
+    callback({
+      $queryRaw:mocked.queryRaw,
+      assetModel:{findUnique:mocked.modelFindUnique},
+      assetMeshBinding:{
+        findUnique:mocked.bindingFindUnique,findFirst:mocked.bindingFindFirst,
+        create:mocked.bindingCreate,update:mocked.bindingUpdate,
+        delete:mocked.bindingDelete,
+      },
+      auditLog:{findFirst:mocked.auditFindFirst,create:mocked.auditCreate},
+    }));
 });
 
 describe('approved CAD exact component mapping immutability',()=>{
@@ -107,6 +121,26 @@ describe('approved CAD exact component mapping immutability',()=>{
     const res=await POST(request('POST','/api/mesh-bindings',payload));
     expect(res.status).toBe(201);
     expect(mocked.bindingCreate).toHaveBeenCalledOnce();
+  });
+
+  it('serializes unapproved source mapping creation and its audit under the shared model lock',async()=>{
+    mocked.modelFindUnique.mockResolvedValue(model(false));
+    const response=await POST(request('POST','/api/mesh-bindings',payload));
+    expect(response.status).toBe(201);
+    expect(mocked.queryRaw).toHaveBeenCalledOnce();
+    expect(mocked.transaction).toHaveBeenCalledOnce();
+    expect(mocked.bindingCreate).toHaveBeenCalledOnce();
+    expect(mocked.auditCreate).toHaveBeenCalledOnce();
+  });
+
+  it('blocks a stale draft mapping writer when another engineer has approved it under the lock',async()=>{
+    mocked.modelFindUnique.mockResolvedValueOnce(model(false))
+      .mockResolvedValueOnce(model(true));
+    const response=await POST(request('POST','/api/mesh-bindings',payload));
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain('immutable');
+    expect(mocked.queryRaw).toHaveBeenCalledOnce();
+    expect(mocked.bindingCreate).not.toHaveBeenCalled();
   });
 
   it('rejects draft private CAD mappings to a different machine in the same plant',async()=>{

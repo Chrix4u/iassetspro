@@ -22,6 +22,12 @@ The converter writes two restricted (0600), no-overwrite files: pump-revision-A.
 
 In the machine's Asset Details > Digital Twin > Private CAD model library, upload the generated GLB, optionally attach its matching JSON sidecar, select the identical legal origin classification, and document the source/license. The server validates that the sidecar's GLB checksum actually matches the uploaded geometry before recording bounded converter evidence in the private audit. The original STEP checksum is a user-supplied claim until an engineer separately checks the retained source file.
 
+## In-app original CAD source verification
+
+For **converted licensed OEM CAD** with a matching `.glb.source.json` sidecar, the independent Digital Twin manager must now select the *retained original* STEP/IGES/BREP engineering file in the review panel and choose **Verify retained original CAD source**. The browser sends the authorized source once through an authenticated, plant-scoped, size-bounded HTTPS request. The server checks the immutable registered GLB SHA-256 and the actual original source byte length, filename and SHA-256 against the signed-in uploader's conversion manifest, commits a restricted `source_verified` audit, and **does not retain the uploaded original CAD file**. The original uploader cannot verify their own source.
+
+Before approving a converted licensed OEM model, the server requires this independent original-source audit and rejects a missing or mismatched digest even when the reviewer otherwise ticks all boxes. The approval record explicitly distinguishes (1) exact GLB checksum match, (2) verified original source bytes against its conversion manifest, and (3) **unverified actual manufacturer's authenticity and licensing**. Only the first two can be proven cryptographically by this workflow. The engineer still must check source licensing, the machine's actual make/model/serial, drawing revision, dimensions and maintenance catalog. Models imported directly as original OEM GLB still require documented source and physical engineer review, but have no separate STEP manifest to compare.
+
 Use the imported source tree and exact path binding to associate the individual geometry nodes to their registered assembly/subassembly/component/part codes. For multi-surface source objects, surfaces remain explicitly identified as surfaces; they are not invented OEM parts. An independent second engineer must approve original source, geometry and mappings before publishing the 3D scene.
 
 ## Engineering boundaries

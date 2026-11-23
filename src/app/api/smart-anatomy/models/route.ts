@@ -60,6 +60,12 @@ export async function POST(req: NextRequest) {
     const sourceOrigin = String(form.get('sourceOrigin') || '');
     const sourceNote = String(form.get('sourceNote') || '').trim();
     const sourceManifest = form.get('sourceManifest');
+    // The OEM identity is a *source claim*, not automatically verified
+    // manufacturer data in the asset register.
+    const oemManufacturer = String(form.get('oemManufacturer') || '').trim();
+    const oemModel = String(form.get('oemModel') || '').trim();
+    const drawingRevision = String(form.get('drawingRevision') || '').trim();
+    const nameplateSerial = String(form.get('nameplateSerial') || '').trim();
 
     if (!file || typeof file === 'string' || !file.name.toLowerCase().endsWith('.glb') ||
         !Number.isSafeInteger(file.size) || file.size <= 0 || file.size > MAX_PRIVATE_CAD_UPLOAD_BYTES) {
@@ -75,13 +81,38 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
+    if (sourceOrigin === 'licensed-oem' &&
+        ([oemManufacturer, oemModel, drawingRevision, nameplateSerial].some(v =>
+          v.length < 2 || v.length > 140 || /[\\x00-\\x1f]/.test(v)))) {
+      return NextResponse.json({
+        success: false,
+        error: 'Licensed OEM CAD requires documented manufacturer, exact model, drawing revision and installed machine serial',
+      }, { status: 400 });
+    }
+
     const asset = await db.asset.findUnique({
       where: { id: assetId },
-      select: { id: true, plantId: true },
+      select: { id: true, plantId: true, manufacturer: true, model: true, serialNumber: true },
     });
     if (!asset) return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 404 });
     if (!canAccessPlantStrict(scope, asset.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    if (sourceOrigin === 'licensed-oem') {
+      // Refuse a source known to belong to another installed machine. Blank
+      // registered nameplate data can enter draft review, but must be completed
+      // before the independent engineering commissioner can approve it.
+      const equal = (left: string | null, right: string): boolean =>
+        !left || left.trim().toUpperCase() === right.toUpperCase();
+      if (!equal(asset.manufacturer, oemManufacturer) ||
+          !equal(asset.model, oemModel) ||
+          !equal(asset.serialNumber, nameplateSerial)) {
+        return NextResponse.json({
+          success: false,
+          error: 'OEM drawing identity conflicts with the registered machine nameplate',
+        }, { status: 409 });
+      }
     }
 
     const bytes = new Uint8Array(await file.arrayBuffer());
@@ -129,6 +160,10 @@ export async function POST(req: NextRequest) {
             entityType: 'asset_model', entityId: id,
             newValues: JSON.stringify({
               assetId, sourceOrigin, sourceNote, checksum,
+              sourceMachineClaim: sourceOrigin === 'licensed-oem' ? {
+                oemManufacturer, oemModel, drawingRevision, nameplateSerial,
+                sourceNameplateMatchAttested: false,
+              } : null,
               conversionEvidence,
               status: 'awaiting-engineer-commissioning',
               ...geometry,

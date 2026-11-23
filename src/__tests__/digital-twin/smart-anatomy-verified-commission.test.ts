@@ -84,6 +84,7 @@ beforeEach(()=>{
     callback({
       $queryRaw:mocked.queryRaw,
       assetModel:{findUnique:mocked.findUnique,update:mocked.modelUpdate},
+      assetMeshBinding:{findMany:mocked.bindingFindMany},
       auditLog:{findFirst:mocked.auditFindFirst,create:mocked.auditCreate},
     }));
 });
@@ -204,6 +205,24 @@ describe('Smart Anatomy source-backed engineering commissioning',()=>{
     expect(response.status).toBe(409);
     expect((await response.json()).error).toContain('manufacturer');
     expect(mocked.modelUpdate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a mapping edited after source preflight but before engineer approval acquires the row lock',async()=>{
+    mocked.bindingFindMany
+      .mockResolvedValueOnce([{
+        id:'mapping-1',meshPath:path,meshName:path,
+        componentId:'registered-part',component:{assetId:'asset1'},
+      }])
+      .mockResolvedValueOnce([{
+        id:'mapping-1',meshPath:'Different/Part',meshName:'Different/Part',
+        componentId:'registered-part',component:{assetId:'asset1'},
+      }]);
+    const response=await POST(request(),ctx);
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain('changed during review');
+    expect(mocked.queryRaw).toHaveBeenCalledOnce();
+    expect(mocked.modelUpdate).not.toHaveBeenCalled();
+    expect(mocked.auditCreate).not.toHaveBeenCalled();
   });
 
   it('does not resurrect a withdrawn revision if withdrawal commits after the initial check',async()=>{

@@ -1,7 +1,7 @@
 /** User-selected camera direction for *actual* machine photographs.
  * No direction can be inferred from an image or treated as OEM geometry.
  */
-export const MACHINE_PHOTO_VIEWPOINTS = ['front','back','left','right','top','other'] as const;
+export const MACHINE_PHOTO_VIEWPOINTS = ['front','back','left','right','top','bottom','other'] as const;
 export type MachinePhotoViewpoint = typeof MACHINE_PHOTO_VIEWPOINTS[number];
 
 export function isMachinePhotoViewpoint(value: unknown): value is MachinePhotoViewpoint {

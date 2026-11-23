@@ -169,6 +169,16 @@ export async function POST(
       mappedPaths.add(binding.meshPath);
     }
     const linkedComponents = verifiedBindings.length;
+    const unmappedSourcePaths = importedPaths.size - mappedPaths.size;
+    // A multi-part OEM assembly can contain unmaintainable decorative
+    // geometry. It may remain visual-only, but the engineer must see and
+    // acknowledge partial source coverage before approving the revision.
+    if (unmappedSourcePaths > 0 && body?.unmappedNodesAcknowledged !== true) {
+      return NextResponse.json({
+        success: false,
+        error: `CAD contains ${unmappedSourcePaths} unmapped source meshes. Engineer must acknowledge they are visual-only until linked.`,
+      }, { status: 409 });
+    }
     const bindingFingerprint = (bindings: Array<{
       id: string; meshPath: string | null; componentId: string | null;
       component: {assetId: string} | null;
@@ -222,6 +232,9 @@ export async function POST(
             geometryReviewed: true, componentMappingReviewed: true,
             linkedComponents, importedMeshPaths: importedPaths.size,
             exactSourcePathMatches: mappedPaths.size,
+            unmappedSourceMeshCount: unmappedSourcePaths,
+            mappingCoveragePercent: Math.round(10000 * mappedPaths.size / importedPaths.size) / 100,
+            unmappedNodesAcknowledged: unmappedSourcePaths > 0,
             // This verifies uploaded GLB bytes against the immutable upload
             // audit, NOT the original STEP/IGES/BREP file. An offline
             // source digest comparison remains separate engineering evidence.

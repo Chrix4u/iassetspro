@@ -181,7 +181,7 @@ export async function POST(
     }
     const bindingFingerprint = (bindings: Array<{
       id: string; meshPath: string | null; componentId: string | null;
-      component: {assetId: string} | null;
+      component: {assetId: string | null} | null;
     }>): string => JSON.stringify(bindings.map(item => [
       item.id, item.meshPath, item.componentId, item.component?.assetId || null,
     ]).sort((a,b) => String(a[0]).localeCompare(String(b[0]))));

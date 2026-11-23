@@ -749,16 +749,29 @@ export async function POST(request: NextRequest) {
             inventoryItemsToCreate.push({
               itemCode: await generateUniqueItemCode(),
               name: sparePart.name,
-              description: `${sparePart.name} - spare part for ${component.name}`,
+              description: `UNVERIFIED AI DRAFT: proposed spare part for ${component.name}. Engineer/storekeeper must confirm OEM code, unit, and cost.`,
               category: sparePart.category || 'spare_part',
               unitOfMeasure: sparePart.unit || 'each',
               currentStock: 0,
-              minStockLevel: sparePart.minStock || 2,
-              maxStockLevel: sparePart.maxStock || 6,
-              unitCost: sparePart.unitCost || 0,
-              supplier: sparePart.supplier || '',
+              minStockLevel: 0,
+              maxStockLevel: 0,
+              unitCost: 0,
+              supplier: '',
               plantId,
-              specification: JSON.stringify(sparePart.specification || {}),
+              specification: JSON.stringify({
+                aiDraft: {
+                  verified: false,
+                  source: 'ai_suggestion',
+                  suggestedManufacturerPartCode: sparePart.code,
+                  suggestedUnitCost: sparePart.unitCost,
+                  suggestedSupplier: sparePart.supplier,
+                  suggestedStockLimits: {
+                    minimum: sparePart.minStock,
+                    maximum: sparePart.maxStock,
+                  },
+                  suggestedSpecification: sparePart.specification || {},
+                },
+              }),
               createdById: session.userId,
             });
           }
@@ -801,9 +814,10 @@ export async function POST(request: NextRequest) {
           assetId: entry.assetId,
           sortOrder: entry.sortOrder,
           expectedLifeHours: entry.expectedLifeHours,
-          lifecycleStatus: 'operational',
+          lifecycleStatus: 'uncommissioned',
           operatingHours: 0,
           healthScore: 100,
+          notes: 'Unverified AI draft component — confirm exact OEM identity before PM/WO use.',
         })),
         skipDuplicates: true,
       });
@@ -830,7 +844,8 @@ export async function POST(request: NextRequest) {
           specification: item.specification,
           imageUrls: '[]',
           createdById: item.createdById,
-          isActive: true,
+          // Never expose hypothetical AI spare parts to purchasing or issuance until approved.
+          isActive: false,
         })),
         skipDuplicates: true,
       });

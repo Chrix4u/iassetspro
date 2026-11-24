@@ -558,15 +558,17 @@ export async function POST(request: NextRequest) {
         manufacturer: null,
         model: null,
         yearManufactured: null,
-        condition: 'new',
+        acquisitionCondition: 'unknown',
+        condition: 'unknown',
         status: 'standby',
-        criticality: machineData.criticality || 'medium',
+        criticality: 'medium',
         specification: JSON.stringify({
           aiDraft: {
             verified: false,
             source: 'ai_suggestion',
             suggestedManufacturer: machineData.manufacturer,
             suggestedModel: machineData.model,
+            suggestedCriticality: machineData.criticality,
             suggestedSpecifications: machineData.specification || {},
             suggestedPurchaseCost: machineData.purchaseCost || null,
             suggestedLifeYears: machineData.expectedLifeYears || null,
@@ -644,11 +646,18 @@ export async function POST(request: NextRequest) {
         data: {
           name: subsystem.name,
           assetTag: ssAssetTag,
-          description: truncateText(subsystem.description),
-          condition: 'new',
+          description: truncateText('UNVERIFIED AI DRAFT: ' + subsystem.description),
+          acquisitionCondition: 'unknown',
+          condition: 'unknown',
           status: 'standby',
-          criticality: subsystem.criticality || 'medium',
-          specification: JSON.stringify({ subsystem: true }),
+          criticality: 'medium',
+          specification: JSON.stringify({
+            subsystem: true,
+            aiDraft: {
+              verified: false, source: 'ai_suggestion',
+              suggestedCriticality: subsystem.criticality,
+            },
+          }),
           plantId,
           categoryId,
           parentId: mainAsset.id,
@@ -664,7 +673,11 @@ export async function POST(request: NextRequest) {
         partNumber: ssAssetTag,
         quantity: 1,
         unit: 'each',
-        specification: JSON.stringify({ type: 'subsystem', description: subsystem.description }),
+        specification: JSON.stringify({
+          type: 'subsystem',
+          description: subsystem.description,
+          aiDraft: { verified: false, source: 'ai_suggestion' },
+        }),
       });
 
       // Process components within subsystem
@@ -680,11 +693,18 @@ export async function POST(request: NextRequest) {
           data: {
             name: component.name,
             assetTag: compAssetTag,
-            description: truncateText(component.description),
-            condition: 'new',
+            description: truncateText('UNVERIFIED AI DRAFT: ' + component.description),
+            acquisitionCondition: 'unknown',
+            condition: 'unknown',
             status: 'standby',
-            criticality: component.criticality || 'medium',
-            specification: JSON.stringify(component.specification || {}),
+            criticality: 'medium',
+            specification: JSON.stringify({
+              aiDraft: {
+                verified: false, source: 'ai_suggestion',
+                suggestedCriticality: component.criticality,
+                suggestedSpecifications: component.specification || {},
+              },
+            }),
             plantId,
             categoryId,
             parentId: subsystemAsset.id,
@@ -700,7 +720,13 @@ export async function POST(request: NextRequest) {
           partNumber: componentCode,
           quantity: 1,
           unit: 'each',
-          specification: JSON.stringify(component.specification || {}),
+          specification: JSON.stringify({
+            aiDraft: {
+              verified: false, source: 'ai_suggestion',
+              suggestedSpecifications: component.specification || {},
+              suggestedCriticality: component.criticality,
+            },
+          }),
         });
 
         // Component registry entry
@@ -709,8 +735,14 @@ export async function POST(request: NextRequest) {
           name: component.name,
           description: component.description,
           componentType: 'component',
-          criticality: component.criticality || 'medium',
-          specification: JSON.stringify(component.specification || {}),
+          criticality: 'medium',
+          specification: JSON.stringify({
+            aiDraft: {
+              verified: false, source: 'ai_suggestion',
+              suggestedCriticality: component.criticality,
+              suggestedSpecifications: component.specification || {},
+            },
+          }),
           assetId: mainAsset.id,
           sortOrder: (ssIdx * 100) + compIdx,
           expectedLifeHours: null,

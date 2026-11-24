@@ -511,6 +511,7 @@ function ProcessedModel({
       assetId:binding.assetId ?? null,
       componentCode:binding.componentCode,
       verified:Boolean(binding.componentId),
+      isCadSurface:mesh.userData.iAssetsCadSurface === true,
     })),
     ...staticMeshes.map(mesh=>({
       id:mesh.userData.__iAssetsSourceMeshUUID as string || mesh.uuid,
@@ -520,6 +521,7 @@ function ProcessedModel({
       componentId:null,
       assetId:null,
       verified:false,
+      isCadSurface:mesh.userData.iAssetsCadSurface === true,
     })),
   ].sort((a,b)=>a.path.localeCompare(b.path)), [interactiveMeshes,staticMeshes]);
 

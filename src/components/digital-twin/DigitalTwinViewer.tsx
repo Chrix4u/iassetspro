@@ -24,7 +24,7 @@ import { api } from '@/lib/api';
 import { SceneLighting } from './SceneLighting';
 import { GroundPlane } from './GroundPlane';
 import { ModelLoader } from './ModelLoader';
-import type { ImportedAnatomyMesh } from './anatomyBindings';
+import { countImportedSourceGroups, type ImportedAnatomyMesh } from './anatomyBindings';
 import { InteractiveMesh, type AssetMeshBinding } from './InteractiveMesh';
 import { IoTOverlayLayer } from './IoTOverlayLayer';
 import { SectionPlane } from './SectionPlane';
@@ -402,12 +402,16 @@ export function DigitalTwinViewer({
   const [modelError, setModelError] = useState<string | null>(null);
   const [anatomyMeshCount, setAnatomyMeshCount] = useState(0);
   const [anatomyMeshes, setAnatomyMeshes] = useState<ImportedAnatomyMesh[]>([]);
+  const anatomySourceGroupCount = useMemo(
+    () => countImportedSourceGroups(anatomyMeshes), [anatomyMeshes],
+  );
   const onAnatomyManifest = useCallback((next: ImportedAnatomyMesh[])=>{
     setAnatomyMeshes(previous=>{
       if(previous.length===next.length && previous.every((item,index)=>{
         const newer=next[index];
         return item.id===newer.id && item.path===newer.path &&
-          item.selectionKey===newer.selectionKey && item.componentId===newer.componentId;
+          item.selectionKey===newer.selectionKey && item.componentId===newer.componentId &&
+          item.isCadSurface===newer.isCadSurface;
       })) return previous;
       return next;
     });
@@ -867,9 +871,12 @@ export function DigitalTwinViewer({
           </div>
           {effectiveModelUrl && anatomyMeshCount > 0 && (
             <span className="text-[10px] text-slate-400" aria-live="polite">
-              {anatomyMeshCount === 1
-                ? 'Single imported mesh · no separable mechanical parts'
-                : anatomyMeshCount.toLocaleString() + ' imported meshes · geometry-backed explosion'}
+              {anatomySourceGroupCount === 0
+                ? 'Inspecting imported geometry groups…'
+                : anatomySourceGroupCount === 1
+                  ? anatomyMeshCount.toLocaleString() + ' mesh surfaces · one source geometry group; no explosion'
+                  : anatomyMeshCount.toLocaleString() + ' meshes · ' +
+                    anatomySourceGroupCount.toLocaleString() + ' imported geometry groups (visual-only until approved)'}
             </span>
           )}
           {!propModelUrl && currentScene && (
@@ -902,7 +909,7 @@ export function DigitalTwinViewer({
           viewMode={viewMode}
           onViewModeChange={handleViewModeChange}
           isTreeOpen={isTreeOpen}
-          anatomyMeshCount={anatomyMeshCount}
+          anatomyGroupCount={anatomySourceGroupCount}
           isIllustrativeDemo={isIllustrativeDemo}
         />
       )}

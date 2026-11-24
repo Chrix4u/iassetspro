@@ -69,7 +69,7 @@ export interface TwinToolbarProps {
   /** Whether the left scene tree panel is open (shifts toolbar right) */
   isTreeOpen?: boolean;
   /** Exact number of actual meshes in the imported model; single-mesh files cannot explode. */
-  anatomyMeshCount?: number;
+  anatomyGroupCount?: number;
   isIllustrativeDemo?: boolean;
 }
 
@@ -138,8 +138,8 @@ function ToolbarDivider() {
 // Explode Slider Popup
 // ============================================================================
 
-function ExplodeSliderPopup({ meshCount }: { meshCount?: number }) {
-  const canExplode = meshCount === undefined || meshCount >= 2;
+function ExplodeSliderPopup({ groupCount }: { groupCount?: number }) {
+  const canExplode = groupCount === undefined || groupCount >= 2;
   const explodeMode = useDigitalTwinStore(s => s.explodeMode);
   const explodeProgress = useDigitalTwinStore(s => s.explodeProgress);
   const setExplodeProgress = useDigitalTwinStore(s => s.setExplodeProgress);
@@ -165,8 +165,8 @@ function ExplodeSliderPopup({ meshCount }: { meshCount?: number }) {
       >
         <DropdownMenuLabel className="text-slate-300">3D Smart Anatomy · Explosion</DropdownMenuLabel>
         {!canExplode && <p className="px-2 pb-2 text-xs text-amber-300">
-          {meshCount === 0 ? 'Load an approved multi-mesh 3D model first.' :
-            'This model is a single mesh, so there are no separate parts to explode.'}
+          {groupCount === 0 ? 'Load a source-backed multi-part 3D model first.' :
+            'Only one imported source geometry group exists; multiple surfaces of one CAD part are not separable parts.'}
         </p>}
         {canExplode && <div className="px-2 pb-2 pt-1">
           <Slider
@@ -315,7 +315,7 @@ export function TwinToolbar({
   viewMode = '3d',
   onViewModeChange,
   isTreeOpen = false,
-  anatomyMeshCount,
+  anatomyGroupCount,
   isIllustrativeDemo = false,
 }: TwinToolbarProps) {
   const explodeMode = useDigitalTwinStore(s => s.explodeMode);
@@ -400,7 +400,7 @@ export function TwinToolbar({
         <ToolbarDivider />
 
         {/* ── Analysis Tools ────────────────────────────────────────────── */}
-        <ExplodeSliderPopup meshCount={anatomyMeshCount} />
+        <ExplodeSliderPopup groupCount={anatomyGroupCount} />
         <SectionPlanePopup />
         <ToolbarButton
           icon={<Eye className="h-4 w-4" />}

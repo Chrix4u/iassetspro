@@ -10,6 +10,24 @@ export interface ImportedAnatomyMesh {
   assetId: string | null;
   componentCode?: string;
   verified: boolean;
+  /** True only for a tessellated surface marked by the source CAD converter. */
+  isCadSurface?: boolean;
+}
+
+/** Source-part identity, not an inferred OEM part number or mechanical procedure. */
+export function sourceGeometryGroupKey(path: string, isCadSurface: boolean): string {
+  if (isCadSurface) {
+    const slash = path.lastIndexOf('/');
+    if (slash > 0) return 'source-part:' + path.slice(0, slash);
+  }
+  return 'independent-mesh:' + path;
+}
+
+/** Counts actual selectable source geometry groups, not tessellated surfaces. */
+export function countImportedSourceGroups(meshes: ReadonlyArray<ImportedAnatomyMesh>): number {
+  return new Set(meshes.map(mesh => sourceGeometryGroupKey(
+    mesh.path, mesh.isCadSurface === true,
+  ))).size;
 }
 
 /**

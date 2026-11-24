@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import {buildAnatomyExplosion} from '@/components/digital-twin/anatomyExplosion';
 import {convertCadImportToGlb} from '@/lib/smart-anatomy/offline-step-converter';
 import {buildImportedNodePaths, cloneImportedAnatomyMesh} from '@/components/digital-twin/anatomyModelMesh';
+import {countImportedSourceGroups} from '@/components/digital-twin/anatomyBindings';
 
 function surface(name: string, x: number, isCadFace = true) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.8,0.4,0.2),new THREE.MeshBasicMaterial());
@@ -48,15 +49,15 @@ describe('OEM source product grouping in real exploded CAD',()=>{
   it('fails closed if two engineers specified inconsistent exploded offsets for the same part',()=>{
     const {root,surfaceOne,surfaceTwo}=physicalPartAssembly();
     const plans=buildAnatomyExplosion(root,[
-      {meshName:surfaceOne.name,componentId:'first-face',explodeOffset:[2,0,0]},
-      {meshName:surfaceTwo.name,componentId:'second-face',explodeOffset:[0,2,0]},
+      {meshName:surfaceOne.name,assetId:'pump-1',assetName:'Pump',componentId:'first-face',explodeOffset:[2,0,0]},
+      {meshName:surfaceTwo.name,assetId:'pump-1',assetName:'Pump',componentId:'second-face',explodeOffset:[0,2,0]},
     ]);
     expect(plans).toEqual([]);
   });
   it('applies an engineer-approved part offset to ALL surfaces of that genuine part',()=>{
     const {root,surfaceOne}=physicalPartAssembly();
     const plans=buildAnatomyExplosion(root,[
-      {meshName:surfaceOne.name,componentId:'verified-genuine-part',explodeOffset:[0,3,0]},
+      {meshName:surfaceOne.name,assetId:'pump-1',assetName:'Pump',componentId:'verified-genuine-part',explodeOffset:[0,3,0]},
     ]);
     expect(plans[0].offset.toArray()).toEqual([0,3,0]);
     expect(plans[1].offset.toArray()).toEqual([0,3,0]);
@@ -136,6 +137,13 @@ describe('OEM source product grouping in real exploded CAD',()=>{
       rendered.add(clone);
     });
     expect(rendered.children).toHaveLength(3);
+    expect(countImportedSourceGroups(rendered.children.map(mesh=>({
+      id:mesh.uuid,
+      path:String(mesh.userData.__iAssetsSourceNodePath),
+      meshName:mesh.name,selectionKey:mesh.name,
+      componentId:null,assetId:null,verified:false,
+      isCadSurface:mesh.userData.iAssetsCadSurface===true,
+    })))).toBe(2);
     const surfaces=rendered.children.filter(mesh=>mesh.userData.iAssetsCadSurface===true);
     expect(surfaces).toHaveLength(2);
     expect(surfaces[0].userData.__iAssetsSourceNodePath)

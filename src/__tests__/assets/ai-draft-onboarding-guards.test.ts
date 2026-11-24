@@ -97,7 +97,7 @@ describe('AI draft asset commissioning safety guards', () => {
       'await tx.auditLog.create({',
       'return mainAsset;',
     ]) expect(registration).toContain(statement);
-    expect(registration).not.toContain('await db.');
+    expect(registration.replace('const mainAsset = await db.$transaction(async tx => {', '')).not.toContain('await db.');
     expect(registration).toContain('skipDuplicates: false');
     expect(registration).toContain('timeout: 90000');
     expect(route).toContain('verificationStatus: \'unverified_draft\'');

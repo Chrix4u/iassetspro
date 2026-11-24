@@ -1067,9 +1067,11 @@ export async function POST(request: NextRequest) {
             assetType: 'default',
             assetId: mainAsset.id,
             assetTag: mainAssetTag,
-            status: 'operational',
+            status: 'unverified',
             criticality: machineData.criticality,
-            health: 100,
+            provenance: 'ai_suggestion',
+            health: null,
+            verified: false,
             parameters: [
               { name: 'Subsystems', value: String(machineData.subsystems.length), unit: '' },
               { name: 'Components', value: String(summary.components), unit: '' },
@@ -1101,9 +1103,12 @@ export async function POST(request: NextRequest) {
           data: {
             label: subsystem.name,
             assetType: 'default',
-            status: 'operational',
+            status: 'unverified',
             criticality: subsystem.criticality,
-            health: 100,
+            verified: false,
+            provenance: 'ai_suggestion',
+            health: null,
+            verified: false,
             parameters: [
               { name: 'Components', value: String(subsystem.components?.length || 0), unit: '' },
             ],
@@ -1135,70 +1140,72 @@ export async function POST(request: NextRequest) {
           const nodeData: Record<string, unknown> = {
             label: component.name,
             criticality: component.criticality,
+            verified: false,
+            provenance: 'ai_suggestion',
           };
 
           // Add type-specific data
           switch (nodeType) {
             case 'motorNode':
-              nodeData.status = 'stopped';
-              nodeData.powerRating = 15;
-              nodeData.rpm = 1500;
+              nodeData.status = 'unverified';
+              nodeData.powerRating = null;
+              nodeData.rpm = null;
               break;
             case 'pumpNode':
-              nodeData.pumpType = 'centrifugal';
-              nodeData.status = 'stopped';
+              nodeData.pumpType = 'unverified';
+              nodeData.status = 'unverified';
               break;
             case 'valveNode':
-              nodeData.state = 'closed';
-              nodeData.valveType = 'isolation';
+              nodeData.state = 'unknown';
+              nodeData.valveType = 'unverified';
               break;
             case 'sensorNode':
               nodeData.parameter = component.description?.slice(0, 40) || 'Measurement';
               nodeData.value = 0;
               nodeData.unit = '';
-              nodeData.min = 0;
-              nodeData.max = 100;
-              nodeData.status = 'normal';
+              nodeData.min = null;
+              nodeData.max = null;
+              nodeData.status = 'unverified';
               break;
             case 'pipeNode':
-              nodeData.diameter = '100';
-              nodeData.material = 'CS';
-              nodeData.flowDirection = 'forward';
+              nodeData.diameter = null;
+              nodeData.material = 'unverified';
+              nodeData.flowDirection = 'unknown';
               break;
             case 'tankNode':
-              nodeData.fillLevel = 0;
-              nodeData.capacity = 500;
-              nodeData.levelStatus = 'normal';
+              nodeData.fillLevel = null;
+              nodeData.capacity = null;
+              nodeData.levelStatus = 'unverified';
               break;
             case 'controlNode':
-              nodeData.controllerType = 'PLC';
-              nodeData.ioCount = { in: 8, out: 4 };
-              nodeData.scanRate = 100;
-              nodeData.status = 'running';
+              nodeData.controllerType = 'unverified';
+              nodeData.ioCount = null;
+              nodeData.scanRate = null;
+              nodeData.status = 'unverified';
               break;
             case 'electricalNode':
-              nodeData.equipType = 'switchgear';
-              nodeData.status = 'energized';
+              nodeData.equipType = 'unverified';
+              nodeData.status = 'unverified';
               break;
             case 'heatExchangerNode':
-              nodeData.exchangerType = 'shell_tube';
-              nodeData.status = 'operational';
+              nodeData.exchangerType = 'unverified';
+              nodeData.status = 'unverified';
               break;
             case 'vesselNode':
-              nodeData.vesselType = 'separator';
-              nodeData.status = 'operational';
+              nodeData.vesselType = 'unverified';
+              nodeData.status = 'unverified';
               break;
             case 'instrumentNode':
               nodeData.tag = `IT-${String(ssIdx + 1).padStart(2, '0')}${String(compIdx + 1).padStart(2, '0')}`;
-              nodeData.measureType = 'Process';
+              nodeData.measureType = 'unverified';
               nodeData.value = null;
               nodeData.unit = '';
-              nodeData.status = 'normal';
+              nodeData.status = 'unverified';
               break;
             default: // assetNode
               nodeData.assetType = 'default';
-              nodeData.status = 'operational';
-              nodeData.health = 100;
+              nodeData.status = 'unverified';
+              nodeData.health = null;
               break;
           }
 

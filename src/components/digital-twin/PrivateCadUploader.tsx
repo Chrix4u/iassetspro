@@ -32,6 +32,7 @@ export interface PrivateCadModel {
   fileName?: string;
   isActive?: boolean;
   meshCount?: number;
+  sourceOrigin?:string;
 }
 
 export function PrivateCadUploader({
@@ -104,9 +105,10 @@ export function PrivateCadUploader({
   const loadModels = useCallback(async () => {
     try {
       const res = await api.get<PrivateCadModel[]>(
-        '/api/asset-models?assetId=' + encodeURIComponent(assetId) + '&limit=100');
+        '/api/smart-anatomy/models?assetId=' + encodeURIComponent(assetId));
       if (res.success) {
         setModels((res.data || []).filter(model =>
+          model.sourceOrigin !== 'site-owned-scan' &&
           /^\/api\/smart-anatomy\/models\/[0-9a-f-]{36}\/file$/i.test(model.filePath)));
       }
     } catch {

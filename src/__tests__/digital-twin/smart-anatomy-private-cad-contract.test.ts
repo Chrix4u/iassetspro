@@ -40,7 +40,9 @@ describe('Smart Anatomy protected GLB commissioning and access contracts', () =>
   it('records explicit engineering approval but does not authorize physical disassembly', () => {
     expect(commission).toContain("hasPermission(session, 'digital_twin.manage')");
     expect(commission).toContain('componentId: { not: null }');
-    expect(commission).toContain('if (!verifiedBindings.length)');
+    expect(commission).toContain("if (!verifiedBindings.length && claimOrigin !== 'site-owned-scan')");
+    expect(commission).toContain("claimOrigin === 'site-owned-scan' && verifiedBindings.length");
+    expect(commission).toContain('tx.siteScanHotspot.findMany');
     expect(commission).toContain('importedPaths.has(binding.meshPath)');
     expect(commission).toContain('binding.component?.assetId !== model.assetId');
     expect(commission).toContain('uploadedGlbIntegrityVerified: true');

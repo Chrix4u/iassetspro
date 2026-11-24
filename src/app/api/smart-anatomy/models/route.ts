@@ -258,7 +258,7 @@ export async function GET(req: NextRequest) {
   }) : [];
   const firstOrigin=new Map<string, {sourceOrigin:string;scanCapture:unknown}>();
   for(const audit of sourceAudits){
-    if(firstOrigin.has(audit.entityId))continue;
+    if(!audit.entityId || firstOrigin.has(audit.entityId))continue;
     try{
       const info=JSON.parse(audit.newValues||'{}') as {
         sourceOrigin?:unknown;scanCapture?:unknown;

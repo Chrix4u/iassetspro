@@ -31,6 +31,13 @@ export async function POST(req:NextRequest,{params}:Ctx){
   }
   const outcome=await db.$transaction(async tx=>{
     await tx.$queryRaw`SELECT id FROM "asset_models" WHERE id = ${id} FOR UPDATE`;
+    // Serialize with OEM/scan revision withdrawal; stale pre-lock checks
+    // cannot approve or mutate a withdrawn scan.
+    const withdrawn=await tx.auditLog.findFirst({
+      where:{entityType:'asset_model',entityId:id,action:'withdraw'},
+      select:{id:true},
+    });
+    if(withdrawn)return 'withdrawn' as const;
     const marker=await tx.siteScanHotspot.findFirst({where:{
       id:hotspotId,modelId:id,assetId:model.assetId,
     },select:{id:true,componentId:true,createdById:true,isApproved:true,

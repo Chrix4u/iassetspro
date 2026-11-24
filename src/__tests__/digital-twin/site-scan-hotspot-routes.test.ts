@@ -77,7 +77,7 @@ beforeEach(()=>{
       count:m.markerCount,create:m.markerCreate,findFirst:m.markerFind,
       update:m.markerUpdate,delete:m.markerDelete,
     },
-    auditLog:{create:m.auditCreate},
+    auditLog:{create:m.auditCreate,findFirst:m.source},
   }));
 });
 
@@ -150,6 +150,30 @@ describe('site-owned scan spatial hotspot permissions and provenance',()=>{
       componentId:'part-a',component:{assetId:'asset-a',lifecycleStatus:'uncommissioned'},
     });
     expect((await review(reviewRequest(reviewBody),reviewCtx)).status).toBe(409);
+  });
+  it('rejects a marker that races with scan withdrawal after the model lock',async()=>{
+    let withdrawReads=0;
+    m.source.mockImplementation(async(input:{where:{action:string}})=>{
+      if(input.where.action==='create')return {newValues:JSON.stringify({
+        sourceOrigin:'site-owned-scan',scanCapture:{method:'lidar',geometryUnits:'m',visibleSurfacesOnly:true},
+      })};
+      return ++withdrawReads>=2?{id:'withdraw-audit'}:null;
+    });
+    expect((await POST(request('POST',goodBody),context)).status).toBe(409);
+    expect(m.markerCreate).not.toHaveBeenCalled();
+    expect(m.auditCreate).not.toHaveBeenCalled();
+  });
+  it('refuses approving a hotspot if the scan is withdrawn between precheck and lock',async()=>{
+    let withdrawReads=0;
+    m.source.mockImplementation(async(input:{where:{action:string}})=>{
+      if(input.where.action==='create')return {newValues:JSON.stringify({
+        sourceOrigin:'site-owned-scan',scanCapture:{method:'lidar',geometryUnits:'m',visibleSurfacesOnly:true},
+      })};
+      return ++withdrawReads>=2?{id:'withdraw-audit'}:null;
+    });
+    expect((await review(reviewRequest(reviewBody),reviewCtx)).status).toBe(409);
+    expect(m.markerUpdate).not.toHaveBeenCalled();
+    expect(m.auditCreate).not.toHaveBeenCalled();
   });
   it('prevents deletion of independently approved physical evidence',async()=>{
     m.markerFind.mockResolvedValue({id:hotspotId,componentId:'part-a',isApproved:true});

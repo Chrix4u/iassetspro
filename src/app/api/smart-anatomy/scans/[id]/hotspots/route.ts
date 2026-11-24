@@ -52,6 +52,13 @@ export async function POST(req:NextRequest,{params}:Ctx){
     return bad(409,'Selected component is not registered on this machine');
   const saved=await db.$transaction(async tx=>{
     await tx.$queryRaw`SELECT id FROM "asset_models" WHERE id = ${id} FOR UPDATE`;
+    // Serialize with OEM/scan revision withdrawal; stale pre-lock checks
+    // cannot approve or mutate a withdrawn scan.
+    const withdrawn=await tx.auditLog.findFirst({
+      where:{entityType:'asset_model',entityId:id,action:'withdraw'},
+      select:{id:true},
+    });
+    if(withdrawn)return 'withdrawn' as const;
     if(await tx.siteScanHotspot.count({where:{modelId:id}})>=120)return null;
     const hotspot=await tx.siteScanHotspot.create({data:{
       modelId:id,assetId:model.assetId,componentId,label,
@@ -66,6 +73,7 @@ export async function POST(req:NextRequest,{params}:Ctx){
     }});
     return hotspot;
   });
+  if(saved==='withdrawn')return bad(409,'Scan revision was withdrawn during marker placement');
   return saved?NextResponse.json({success:true,data:saved},{status:201}):
     bad(409,'Maximum 120 scan hotspots per model');
 }
@@ -83,6 +91,13 @@ export async function DELETE(req:NextRequest,{params}:Ctx){
   if(!hotspotId||reason.length<15||reason.length>500)return bad(400,'Explain marker withdrawal');
   const found=await db.$transaction(async tx=>{
     await tx.$queryRaw`SELECT id FROM "asset_models" WHERE id = ${id} FOR UPDATE`;
+    // Serialize with OEM/scan revision withdrawal; stale pre-lock checks
+    // cannot approve or mutate a withdrawn scan.
+    const withdrawn=await tx.auditLog.findFirst({
+      where:{entityType:'asset_model',entityId:id,action:'withdraw'},
+      select:{id:true},
+    });
+    if(withdrawn)return 'withdrawn' as const;
     const current=await tx.siteScanHotspot.findFirst({where:{
       id:hotspotId,modelId:id,assetId:model.assetId,
     }});
@@ -97,6 +112,7 @@ export async function DELETE(req:NextRequest,{params}:Ctx){
     }});
     return true;
   });
+  if(found==='withdrawn')return bad(409,'Scan revision was withdrawn during marker retraction');
   if(found==='approved-immutable')return bad(409,
     'Approved scan markers are immutable; withdraw the scan and import a corrected revision');
   if(found==='not-found')return bad(404,'Hotspot not found');

@@ -1,4 +1,5 @@
 import {readFileSync} from 'node:fs';
+import {randomUUID} from 'node:crypto';
 import {test,expect} from '@playwright/test';
 import {getToken,lookupAssetId,lookupPlantId} from './helpers/api';
 import {authenticateAs} from './helpers/auth';
@@ -28,9 +29,10 @@ test('UAT: private synthetic scan, real RBAC, maker-checker and plant-safe appro
 
   const dummyOriginalGeometry=readFileSync('public/smart-anatomy-demos/original-centrifugal-pump.glb');
   expect(dummyOriginalGeometry.length).toBeGreaterThan(256);
+  const fixtureName='CI synthetic machine-scan '+randomUUID()+' — NOT physical plant evidence';
   const upload=await request.post('/api/smart-anatomy/models',{headers:headersA,multipart:{
     assetId,
-    name:'CI synthetic machine-scan test fixture — NOT physical plant evidence',
+    name:fixtureName,
     sourceOrigin:'site-owned-scan',
     sourceNote:'Synthetic automated integration mesh only; not captured from any actual installed customer machine.',
     captureMethod:'photogrammetry',
@@ -147,6 +149,13 @@ test('UAT: private synthetic scan, real RBAC, maker-checker and plant-safe appro
 
   // Exercise the REAL browser GLTFLoader, not only the JSON API client.
   // GLTFLoader previously omitted Bearer and could not load private models.
+  // Rendering must not depend on an external HDRI CDN. Abort any such request
+  // instead of letting internet availability determine release readiness.
+  const externalLightingRequests:string[]=[];
+  await page.route(/\.(hdr|exr)(?:\?|$)/i,async route=>{
+    externalLightingRequests.push(route.request().url());
+    await route.abort();
+  });
   await authenticateAs(context,'engineer_b');
   await page.goto('/');
   await page.evaluate(id=>localStorage.setItem('user_plant_id',id),plantId);
@@ -162,12 +171,14 @@ test('UAT: private synthetic scan, real RBAC, maker-checker and plant-safe appro
     timeout:30000,
   });
   await panel.getByRole('combobox').first().click();
-  await page.getByRole('option',{name:/CI synthetic machine-scan test fixture/i}).click();
+  await page.getByRole('option',{name:fixtureName+' · Approved',exact:true}).click();
   const fileLoaded=await fileResponse;
   const sentAuthorization=fileLoaded.request().headers()['authorization']||'';
   expect(sentAuthorization).toMatch(/^Bearer\s+\S+/);
   expect(fileLoaded.request().headers()['x-plant-id']).toBe(plantId);
   expect(fileLoaded.headers()['content-type']).toContain('model/gltf-binary');
   await expect(panel.getByText(/As-built exterior scan|As-built scan \+ verified CAD/i).first())
-    .toBeVisible({timeout:20000});
+    .toBeVisible({timeout:30000});
+  expect(externalLightingRequests).toEqual([]);
+  await expect(page.getByRole('heading',{name:'Runtime Error',exact:true})).toHaveCount(0);
 });

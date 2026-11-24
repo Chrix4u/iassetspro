@@ -3,6 +3,7 @@ import {describe,it,expect} from 'vitest';
 
 const source=(path:string)=>readFileSync(path,'utf8');
 const prod=source('prisma/seed.ts');
+const release=source('prisma/seed-permissions-only.ts');
 const fixture=source('scripts/seed-repairs-uat-rbac.ts');
 const uatActors=source('scripts/seed-repairs-uat.ts');
 const workflow=source('.github/workflows/ci.yml');
@@ -20,7 +21,8 @@ function bundle(text:string,slug:string){
 describe('production-safe independently authorized Smart Anatomy engineering roles',()=>{
   it('seeds a dedicated reliability engineer with managing rights and plant-safe viewing',()=>{
     expect(prod).toContain("slug: 'reliability_engineer'");
-    for(const text of [prod,fixture]){
+    expect(release).toContain("slug: 'reliability_engineer'");
+    for(const text of [prod,release,fixture]){
       const engineer=bundle(text,'reliability_engineer');
       expect(engineer).toContain("'digital_twin.manage'");
       expect(engineer).toContain("'digital_twin.view'");
@@ -35,9 +37,11 @@ describe('production-safe independently authorized Smart Anatomy engineering rol
       'maintenance_manager','maintenance_planner',
       'maintenance_supervisor','maintenance_technician',
     ]){
-      const main=bundle(prod,slug);
-      expect(main).toContain("'digital_twin.view'");
-      expect(main).not.toContain("'digital_twin.manage'");
+      for(const seed of [prod,release]){
+        const main=bundle(seed,slug);
+        for(const grant of ['digital_twin.view','model_viewer.view','hotspots.view'])expect(main).toContain("'"+grant+"'");
+        expect(main).not.toContain("'digital_twin.manage'");
+      }
       if(slug!=='maintenance_manager'){
         const uat=bundle(fixture,slug);
         expect(uat).toContain("'digital_twin.view'");

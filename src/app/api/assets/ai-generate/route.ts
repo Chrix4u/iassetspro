@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin, getUserPlantId } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
-import { aiChatCompletion, aiImageGeneration } from '@/lib/ai-client';
+import { aiChatCompletion } from '@/lib/ai-client';
 import { canAccessPlant, getPlantScope } from '@/lib/plant-scope';
 import { aiAssemblyCode, aiComponentCode, aiPartCode, normalizeAiMachineCode } from '@/lib/ai-asset-codes';
 
@@ -343,76 +341,10 @@ function inferDiagramNodeType(componentName: string): string {
 }
 
 // ============================================================================
-// HELPER — Generate machine image with AI
-// ============================================================================
-
-async function generateMachineImage(
-  machineName: string,
-  description: string,
-  assetId: string,
-): Promise<string | null> {
-  try {
-    const prompt = `Professional industrial technical illustration of a ${machineName}. 
-${description}
-Style: Clean technical diagram style with isometric 3D perspective, labeled parts visible, 
-industrial equipment on white/light gray background, engineering blueprint quality, 
-detailed mechanical components visible, professional CAD rendering style, 
-no text overlays, no watermarks, high quality technical illustration.`;
-
-    logger.info('Generating AI machine image', { machineName });
-
-    const response = await aiImageGeneration({
-      prompt,
-      size: '1024x1024',
-    });
-
-    const imageBase64 = response.data?.[0]?.base64;
-    const imageUrl = response.data?.[0]?.url;
-
-    // Save to persistent generated-asset storage when configured.
-    const outputDir = process.env.GENERATED_ASSETS_DIR || path.join(process.cwd(), 'public', 'generated-assets');
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-
-    const filename = `${assetId}.png`;
-    const filepath = path.join(outputDir, filename);
-
-    if (imageBase64) {
-      // Direct base64 data from API
-      const buffer = Buffer.from(imageBase64, 'base64');
-      fs.writeFileSync(filepath, buffer);
-      logger.info('Machine image saved (base64)', { filepath, fileSize: buffer.length });
-    } else if (imageUrl) {
-      // URL from API — download and save
-      const imgResponse = await fetch(imageUrl);
-      if (imgResponse.ok) {
-        const arrayBuffer = await imgResponse.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        fs.writeFileSync(filepath, buffer);
-        logger.info('Machine image saved (downloaded from URL)', { filepath, fileSize: buffer.length });
-      } else {
-        logger.warn('Failed to download image from URL', { url: imageUrl, status: imgResponse.status });
-        return null;
-      }
-    } else {
-      logger.warn('No image data returned from AI');
-      return null;
-    }
-
-    return `/api/generated-assets/${filename}`;
-  } catch (imgError) {
-    const imgErr = imgError instanceof Error ? imgError : new Error(String(imgError));
-    logger.warn('Failed to generate machine image (non-fatal)', { message: imgErr.message });
-    return null;
-  }
-}
-
-// ============================================================================
 // MAIN ROUTE HANDLER
 // ============================================================================
 
-// Allow up to 5 minutes for LLM generation + image + DB writes
+// Allow bounded time for LLM analysis and atomic machine draft registration
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
@@ -1252,28 +1184,10 @@ export async function POST(request: NextRequest) {
       logger.warn('Failed to create system diagram (non-fatal)', { message: diagramErr.message });
     }
 
-    // ================================================================
-    // 9. GENERATE AI MACHINE IMAGE
-    // ================================================================
-    let generatedImageUrl: string | null = null;
-    try {
-      generatedImageUrl = await generateMachineImage(
-        machineData.name,
-        machineData.description,
-        mainAsset.id,
-      );
-
-      if (generatedImageUrl) {
-        // Update the asset with the image URL
-        await db.asset.update({
-          where: { id: mainAsset.id },
-          data: { imageUrl: generatedImageUrl },
-        });
-        logger.info('Asset image URL updated', { assetId: mainAsset.id, imageUrl: generatedImageUrl });
-      }
-    } catch {
-      // Non-fatal - image generation is a nice-to-have
-    }
+    // Machine imagery must be actual, authorized site/OEM photos. Do not
+    // auto-generate an AI illustration at registration, charge a paid image
+    // provider or set asset.imageUrl to a fictional picture of this machine.
+    // Real photos can be uploaded from six elevations in Smart Anatomy.
 
     // ================================================================
     // DONE — Return response
@@ -1303,7 +1217,7 @@ export async function POST(request: NextRequest) {
             plantId: mainAsset.plantId,
             categoryId: mainAsset.categoryId,
             specification: mainAsset.specification,
-            imageUrl: generatedImageUrl,
+            imageUrl: mainAsset.imageUrl,
             createdAt: mainAsset.createdAt,
           },
           summary,

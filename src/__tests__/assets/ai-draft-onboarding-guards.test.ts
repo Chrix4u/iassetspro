@@ -121,6 +121,21 @@ describe('AI draft asset commissioning safety guards', () => {
     expect(route).toContain('imageUrl: mainAsset.imageUrl');
   });
 
+  it('keeps speculative BOM data and diagrams out of active maintenance execution', () => {
+    const transaction=route.slice(
+      route.indexOf('const mainAsset = await db.$transaction(async tx => {'),
+      route.indexOf('// 7. CREATE DIGITAL TWIN'),
+    );
+    expect(transaction).toContain("status: 'under_review'");
+    expect(transaction).not.toContain("status: 'active',");
+    expect(transaction).toContain("revision: 'DRAFT-AI'");
+    expect(transaction).toContain("lifecycleStatus: 'uncommissioned'");
+    const diagram=route.slice(route.indexOf('// 8. CREATE ENHANCED SYSTEM DIAGRAM'));
+    expect(diagram).toContain('assetId: mainAsset.id');
+    expect(diagram).toContain('isActive: false');
+    expect(diagram).toContain('String(summary.inventoryItems)');
+  });
+
   it('makes actual plant path and explicit concept approval mandatory in the generator modal', () => {
     expect(dialog).toContain('<FunctionalLocationPicker');
     expect(dialog).toContain('plantId={plantId}');

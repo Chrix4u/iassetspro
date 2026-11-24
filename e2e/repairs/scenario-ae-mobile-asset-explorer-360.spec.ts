@@ -91,6 +91,31 @@ test('UAT-mobile 360px: hierarchy actions align and diagram fits without an empt
   expect(viewportBox!.x + viewportBox!.width).toBeLessThanOrEqual(361);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(2);
 
+  // Regress the exact screenshot defect: desktop's narrow middle pane must
+  // retain the 3+4 mode grid, and drill controls must never cover the canvas.
+  const modes = page.getByRole('tablist', { name: 'Visual explorer modes' });
+  for (const width of [360, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    const tabs = modes.getByRole('tab');
+    await expect(tabs).toHaveCount(7);
+    const boxes = await Promise.all(Array.from({ length: 7 }, (_, i) => tabs.nth(i).boundingBox()));
+    expect(boxes.every(Boolean)).toBe(true);
+    const row1 = boxes[0]!.y;
+    const row2 = boxes[3]!.y;
+    for (const i of [0, 1, 2]) expect(Math.abs(boxes[i]!.y - row1)).toBeLessThan(2);
+    for (const i of [3, 4, 5, 6]) expect(Math.abs(boxes[i]!.y - row2)).toBeLessThan(2);
+    expect(row2).toBeGreaterThanOrEqual(row1 + boxes[0]!.height - 1);
+    const modeBox = (await modes.boundingBox())!;
+    for (const box of boxes) {
+      expect(box!.x).toBeGreaterThanOrEqual(modeBox.x - 1);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(modeBox.x + modeBox.width + 1);
+    }
+    const canvasBox = (await viewport.boundingBox())!;
+    const drillBox = (await page.getByTestId('machine-drill-panel').boundingBox())!;
+    expect(drillBox.y).toBeGreaterThanOrEqual(canvasBox.y + canvasBox.height - 1);
+  }
+  await page.setViewportSize({ width: 360, height: 780 });
+
   const longNode = schematic.locator(`g[role="button"][aria-label="Select ${assemblyName}"]`);
   await expect(longNode).toBeVisible();
   const nodeLines = await longNode.locator('text').allTextContents();

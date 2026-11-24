@@ -24,6 +24,15 @@ describe('mobile asset explorer and preventive maintenance layout', () => {
     expect(explorer).toContain('relative mt-2 w-full min-w-0 max-w-full overflow-hidden rounded-xl');
   });
 
+  it('lays out the seven modes in two rows of three and four at every pane width', () => {
+    expect(explorer).toContain('aria-label="Visual explorer modes"');
+    expect(explorer).toContain('grid-cols-12 items-stretch');
+    expect(explorer.match(/<TabsTrigger value="(?:model3d|photo|site-scan)" className="col-span-4/g)).toHaveLength(3);
+    expect(explorer.match(/<TabsTrigger value="(?:realistic|diagram|technical2d|exploded)" className="col-span-3/g)).toHaveLength(4);
+    expect(explorer).not.toContain('xl:grid-cols-7');
+    expect(explorer).not.toContain('sm:absolute sm:left-3 sm:top-3');
+  });
+
   it('keeps both asset hierarchy actions in one mobile row', () => {
     expect(assetDetail).toContain('grid w-full min-w-0 grid-cols-2 gap-2 sm:flex sm:justify-end');
     expect(assetDetail).toContain('value="visual-explorer" className="-mx-2 mt-4 min-w-0 space-y-4 sm:mx-0"');

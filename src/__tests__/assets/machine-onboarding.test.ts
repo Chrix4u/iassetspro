@@ -87,7 +87,7 @@ describe('factory machine onboarding — OEM standards and coded hierarchy',()=>
   expect(explorer).toContain('Play guided tour');
   expect(explorer).toContain('Place hotspot at clicked image position');
   expect(photo).toContain('componentId');
-  expect(photo).toContain('items.length>60');
+  expect(photo).toMatch(/!Array\.isArray\(input\)\s*\|\|\s*input\.length\s*>\s*60/);
   expect(photo).toContain('visual.visualType');
   expect(explorer).toContain('AI-generated reference visualization');
  });

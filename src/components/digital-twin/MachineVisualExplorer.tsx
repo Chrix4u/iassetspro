@@ -1076,8 +1076,8 @@ export function MachineVisualExplorer({
   const drillChildren = selectedId ? (childrenByParent.get(selectedId) || []) : roots;
   const parentTarget = selected?.parentId ? componentMap.get(selected.parentId) || null : null;
 
-  const renderDrillOverlay = () => (
-    <div className="relative mt-2 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-white/10 bg-slate-950/90 p-2.5 shadow-xl backdrop-blur sm:absolute sm:left-3 sm:top-3 sm:mt-0 sm:max-w-[280px]">
+  const renderDrillPanel = () => (
+    <div data-testid="machine-drill-panel" className="relative mt-2 w-full min-w-0 max-w-full overflow-hidden rounded-xl border border-white/10 bg-slate-950/90 p-2.5">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-300">Drill into parts</div>
         {selectedId && (
@@ -1088,7 +1088,7 @@ export function MachineVisualExplorer({
         )}
       </div>
       {drillChildren.length > 0 ? (
-        <div className="space-y-1">
+        <div className="max-h-48 space-y-1 overflow-y-auto overscroll-contain">
           {drillChildren.map((child) => (
             <button key={child.id} type="button" onClick={() => setSelectedId(child.id)}
               className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-left text-[11px] text-slate-100 transition-colors hover:bg-cyan-500/15">
@@ -1176,14 +1176,14 @@ export function MachineVisualExplorer({
         </CardHeader>
         <CardContent className="w-full min-w-0 max-w-full px-1.5 pt-0 sm:px-6">
           <Tabs value={mode} onValueChange={setMode} className="w-full min-w-0 max-w-full">
-            <TabsList className="grid h-auto w-full min-w-0 max-w-full grid-cols-2 gap-1 overflow-hidden sm:grid-cols-4 xl:grid-cols-7">
-              <TabsTrigger value="model3d" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Box className="mr-1 h-3.5 w-3.5 shrink-0" />3D Model</TabsTrigger>
-              <TabsTrigger value="photo" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><ImageIcon className="mr-1 h-3.5 w-3.5 shrink-0"/>Site Photo</TabsTrigger>
-              <TabsTrigger value="site-scan" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Box className="mr-1 h-3.5 w-3.5 shrink-0"/>Real 3D Scan</TabsTrigger>
-              <TabsTrigger value="realistic" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><ImageIcon className="mr-1 h-3.5 w-3.5 shrink-0" />AI Realistic</TabsTrigger>
-              <TabsTrigger value="diagram" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Network className="mr-1 h-3.5 w-3.5 shrink-0" />Diagram</TabsTrigger>
-              <TabsTrigger value="technical2d" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Focus className="mr-1 h-3.5 w-3.5 shrink-0" />Engineering 2D</TabsTrigger>
-              <TabsTrigger value="exploded" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Layers3 className="mr-1 h-3.5 w-3.5 shrink-0" />Exploded</TabsTrigger>
+            <TabsList aria-label="Visual explorer modes" className="grid h-auto w-full min-w-0 max-w-full grid-cols-12 items-stretch gap-1 overflow-hidden p-1">
+              <TabsTrigger value="model3d" className="col-span-4 min-w-0 h-full min-h-14 cursor-pointer flex-col gap-1 whitespace-normal break-words px-1 py-1.5 text-center text-xs leading-tight data-[state=active]:border-primary/40 data-[state=active]:text-primary"><Box className="h-3.5 w-3.5 shrink-0" /><span className="block w-full min-w-0 break-words">3D Model</span></TabsTrigger>
+              <TabsTrigger value="photo" className="col-span-4 min-w-0 h-full min-h-14 cursor-pointer flex-col gap-1 whitespace-normal break-words px-1 py-1.5 text-center text-xs leading-tight data-[state=active]:border-primary/40 data-[state=active]:text-primary"><ImageIcon className="h-3.5 w-3.5 shrink-0"/><span className="block w-full min-w-0 break-words">Site Photo</span></TabsTrigger>
+              <TabsTrigger value="site-scan" className="col-span-4 min-w-0 h-full min-h-14 cursor-pointer flex-col gap-1 whitespace-normal break-words px-1 py-1.5 text-center text-xs leading-tight data-[state=active]:border-primary/40 data-[state=active]:text-primary"><Box className="h-3.5 w-3.5 shrink-0"/><span className="block w-full min-w-0 break-words">Real 3D Scan</span></TabsTrigger>
+              <TabsTrigger value="realistic" className="col-span-3 min-w-0 h-full min-h-14 cursor-pointer flex-col gap-1 whitespace-normal break-words px-1 py-1.5 text-center text-xs leading-tight data-[state=active]:border-primary/40 data-[state=active]:text-primary"><ImageIcon className="h-3.5 w-3.5 shrink-0" /><span className="block w-full min-w-0 break-words">AI Realistic</span></TabsTrigger>
+              <TabsTrigger value="diagram" className="col-span-3 min-w-0 h-full min-h-14 cursor-pointer flex-col gap-1 whitespace-normal break-words px-1 py-1.5 text-center text-xs leading-tight data-[state=active]:border-primary/40 data-[state=active]:text-primary"><Network className="h-3.5 w-3.5 shrink-0" /><span className="block w-full min-w-0 break-words">Diagram</span></TabsTrigger>
+              <TabsTrigger value="technical2d" className="col-span-3 min-w-0 h-full min-h-14 cursor-pointer flex-col gap-1 whitespace-normal break-words px-1 py-1.5 text-center text-xs leading-tight data-[state=active]:border-primary/40 data-[state=active]:text-primary"><Focus className="h-3.5 w-3.5 shrink-0" /><span className="block w-full min-w-0 break-words">Engineering 2D</span></TabsTrigger>
+              <TabsTrigger value="exploded" className="col-span-3 min-w-0 h-full min-h-14 cursor-pointer flex-col gap-1 whitespace-normal break-words px-1 py-1.5 text-center text-xs leading-tight data-[state=active]:border-primary/40 data-[state=active]:text-primary"><Layers3 className="h-3.5 w-3.5 shrink-0" /><span className="block w-full min-w-0 break-words">Exploded</span></TabsTrigger>
             </TabsList>
             {tourOrder.length>0&&<div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
               <Button type="button" size="sm" variant="outline" onClick={nextTourPart}>Next assembly / part</Button>
@@ -1449,7 +1449,7 @@ export function MachineVisualExplorer({
             <TabsContent value="diagram" className="mt-3 w-full min-w-0 max-w-full">
               <div className="relative w-full min-w-0 max-w-full">
                 <EngineeringSchematic asset={asset} components={components} selectedId={selectedId} onSelect={setSelectedId} zoom={zoom} pan={pan} panHandlers={panHandlers} />
-                {renderDrillOverlay()}
+                {renderDrillPanel()}
               </div>
             </TabsContent>
 
@@ -1569,15 +1569,14 @@ export function MachineVisualExplorer({
                     )}
                   </div>
 
-                  {renderDrillOverlay()}
-
-                  {tabMode!=='photo'&&<div className="absolute bottom-3 right-3 flex gap-2">
+                </div>
+                {renderDrillPanel()}
+                {tabMode!=='photo'&&<div className="flex flex-wrap justify-end gap-2">
                     <Button size="sm" onClick={generateVisual} disabled={generating} className="cursor-pointer">
                       {generating ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : <Sparkles className="mr-1.5 h-3.5 w-3.5" />}
                       {imageUrl ? 'Regenerate' : 'Generate AI visual'}
                     </Button>
-                  </div>}
-                </div>
+                </div>}
               </TabsContent>
             ))}
           </Tabs>

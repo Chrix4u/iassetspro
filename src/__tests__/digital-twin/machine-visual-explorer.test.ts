@@ -39,9 +39,12 @@ describe('deep machine visual explorer', () => {
   });
 
   it('keeps drill controls available in Diagram and the other visual modes', () => {
-    expect(explorer).toContain('const renderDrillOverlay = () => (');
-    expect(explorer).toMatch(/<TabsContent value="diagram"[\s\S]*?\{renderDrillOverlay\(\)\}/);
-    expect((explorer.match(/\{renderDrillOverlay\(\)\}/g) || []).length).toBe(2);
+    expect(explorer).toContain('const renderDrillPanel = () => (');
+    expect(explorer).toContain('data-testid="machine-drill-panel"');
+    expect(explorer).not.toContain('sm:absolute sm:left-3 sm:top-3');
+    expect(explorer).toMatch(/<\/div>\s*\{renderDrillPanel\(\)\}\s*\{tabMode/);
+    expect(explorer).toMatch(/<TabsContent value="diagram"[\s\S]*?\{renderDrillPanel\(\)\}/);
+    expect((explorer.match(/\{renderDrillPanel\(\)\}/g) || []).length).toBe(2);
   });
 
   it('surfaces component maintenance intelligence inside the drill-down', () => {

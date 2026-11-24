@@ -20,7 +20,7 @@ vi.mock('@/lib/db',()=>({db:{
   siteScanHotspot:{findMany:m.markerList,count:m.markerCount,create:m.markerCreate},
   $transaction:m.transaction,
 }}));
-import {GET,POST} from '@/app/api/smart-anatomy/scans/[id]/hotspots/route';
+import {GET,POST,DELETE} from '@/app/api/smart-anatomy/scans/[id]/hotspots/route';
 import {POST as review} from '@/app/api/smart-anatomy/scans/[id]/hotspots/[hotspotId]/review/route';
 
 const id='f4f9438d-5e92-499a-9abf-b66d6ba591ca';
@@ -150,6 +150,23 @@ describe('site-owned scan spatial hotspot permissions and provenance',()=>{
       componentId:'part-a',component:{assetId:'asset-a',lifecycleStatus:'uncommissioned'},
     });
     expect((await review(reviewRequest(reviewBody),reviewCtx)).status).toBe(409);
+  });
+  it('prevents deletion of independently approved physical evidence',async()=>{
+    m.markerFind.mockResolvedValue({id:hotspotId,componentId:'part-a',isApproved:true});
+    const response=await DELETE(request('DELETE',{
+      hotspotId,reason:'Actual scan hotspot correction needed for machine',
+    }),context);
+    expect(response.status).toBe(409);
+    expect((await response.json()).error).toContain('immutable');
+    expect(m.markerDelete).not.toHaveBeenCalled();
+  });
+  it('allows audited withdrawal of a private, unapproved draft marker',async()=>{
+    const response=await DELETE(request('DELETE',{
+      hotspotId,reason:'Incorrect draft position; recreate before review',
+    }),context);
+    expect(response.status).toBe(200);
+    expect(m.markerDelete).toHaveBeenCalledOnce();
+    expect(m.auditCreate.mock.calls[0][0].data.action).toBe('delete');
   });
   it('independent engineer signs approval with immutable site-scan audit',async()=>{
     expect((await review(reviewRequest(reviewBody),reviewCtx)).status).toBe(200);

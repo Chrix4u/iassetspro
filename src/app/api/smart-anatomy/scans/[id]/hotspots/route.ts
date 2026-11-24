@@ -86,7 +86,10 @@ export async function DELETE(req:NextRequest,{params}:Ctx){
     const current=await tx.siteScanHotspot.findFirst({where:{
       id:hotspotId,modelId:id,assetId:model.assetId,
     }});
-    if(!current)return false;
+    if(!current)return 'not-found' as const;
+    // Approved spatial evidence is immutable even after scan withdrawal.
+    // Corrections require a new scan revision and independent review.
+    if(current.isApproved)return 'approved-immutable' as const;
     await tx.siteScanHotspot.delete({where:{id:hotspotId}});
     await tx.auditLog.create({data:{
       userId:session.userId,action:'delete',entityType:'site_scan_hotspot',entityId:hotspotId,
@@ -94,6 +97,8 @@ export async function DELETE(req:NextRequest,{params}:Ctx){
     }});
     return true;
   });
-  return found?NextResponse.json({success:true,data:{retracted:true}}):
-    bad(404,'Hotspot not found');
+  if(found==='approved-immutable')return bad(409,
+    'Approved scan markers are immutable; withdraw the scan and import a corrected revision');
+  if(found==='not-found')return bad(404,'Hotspot not found');
+  return NextResponse.json({success:true,data:{retracted:true}});
 }

@@ -612,7 +612,11 @@ export async function POST(request: NextRequest) {
     // ================================================================
     logger.info('Creating main asset', { name: machineData.name, tag: mainAssetTag });
 
-    const mainAsset = await db.asset.create({
+    // All core database records commit or roll back together. Never leave a
+    // half-created physical hierarchy, inactive PM proposal or spare draft.
+    // LLM/image generation is deliberately outside the transaction.
+    const mainAsset = await db.$transaction(async tx => {
+    const mainAsset = await tx.asset.create({
       data: {
         name: machineName.trim(),
         assetTag: mainAssetTag,
@@ -652,7 +656,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    logger.info('Main asset created', { assetId: mainAsset.id, assetTag: mainAssetTag });
+    logger.info('AI asset staged for atomic registration', { assetId: mainAsset.id, assetTag: mainAssetTag });
 
     // ================================================================
     // 2. CREATE SUBSYSTEMS + COMPONENTS (Asset hierarchy + BOM + Registry)
@@ -704,7 +708,7 @@ export async function POST(request: NextRequest) {
 
       // Create subsystem asset (child of main asset)
       const ssAssetTag = aiAssemblyCode(mainAssetTag, ssIdx);
-      const subsystemAsset = await db.asset.create({
+      const subsystemAsset = await tx.asset.create({
         data: {
           name: subsystem.name,
           assetTag: ssAssetTag,
@@ -740,7 +744,7 @@ export async function POST(request: NextRequest) {
         const compAssetTag = componentCode;
 
         // Create component asset (child of subsystem)
-        const componentAsset = await db.asset.create({
+        const componentAsset = await tx.asset.create({
           data: {
             name: component.name,
             assetTag: compAssetTag,
@@ -822,7 +826,7 @@ export async function POST(request: NextRequest) {
     // 3. BATCH CREATE BOM ENTRIES
     // ================================================================
     if (bomEntries.length > 0) {
-      await db.billOfMaterial.createMany({
+      await tx.billOfMaterial.createMany({
         data: bomEntries.map(entry => ({
           parentId: entry.parentId,
           childAssetId: entry.childAssetId,
@@ -833,7 +837,7 @@ export async function POST(request: NextRequest) {
           status: 'active',
           revision: 'A',
         })),
-        skipDuplicates: true,
+        skipDuplicates: false,
       });
       summary.bomEntries = bomEntries.length;
     }
@@ -842,7 +846,7 @@ export async function POST(request: NextRequest) {
     // 4. BATCH CREATE COMPONENT REGISTRY ENTRIES
     // ================================================================
     if (componentRegistryEntries.length > 0) {
-      await db.componentRegistry.createMany({
+      await tx.componentRegistry.createMany({
         data: componentRegistryEntries.map(entry => ({
           componentCode: entry.componentCode,
           name: entry.name,
@@ -858,7 +862,7 @@ export async function POST(request: NextRequest) {
           healthScore: 100,
           notes: 'Unverified AI draft component — confirm exact OEM identity before PM/WO use.',
         })),
-        skipDuplicates: true,
+        skipDuplicates: false,
       });
       summary.componentRegistry = componentRegistryEntries.length;
     }
@@ -867,7 +871,7 @@ export async function POST(request: NextRequest) {
     // 5. BATCH CREATE INVENTORY ITEMS
     // ================================================================
     if (inventoryItemsToCreate.length > 0) {
-      await db.inventoryItem.createMany({
+      await tx.inventoryItem.createMany({
         data: inventoryItemsToCreate.map(item => ({
           itemCode: item.itemCode,
           name: item.name,
@@ -886,7 +890,7 @@ export async function POST(request: NextRequest) {
           // Never expose hypothetical AI spare parts to purchasing or issuance until approved.
           isActive: false,
         })),
-        skipDuplicates: true,
+        skipDuplicates: false,
       });
       summary.inventoryItems = inventoryItemsToCreate.length;
     }
@@ -898,7 +902,7 @@ export async function POST(request: NextRequest) {
       summary.pmTemplates++;
 
       // Create PM template
-      const pmTemplate = await db.pmTemplate.create({
+      const pmTemplate = await tx.pmTemplate.create({
         data: {
           title: template.title,
           description: `UNVERIFIED AI proposal — engineer and planner approval required: ${template.title}`,
@@ -919,7 +923,7 @@ export async function POST(request: NextRequest) {
         const task = template.tasks[taskIdx];
         summary.pmTasks++;
 
-        await db.pmTemplateTask.create({
+        await tx.pmTemplateTask.create({
           data: {
             templateId: pmTemplate.id,
             taskNumber: taskIdx + 1,
@@ -937,7 +941,7 @@ export async function POST(request: NextRequest) {
       const frequencyType = template.frequencyType || 'monthly';
       const frequencyValue = frequencyTypeToValue(frequencyType);
 
-      await db.pmSchedule.create({
+      await tx.pmSchedule.create({
         data: {
           title: `${template.title} - ${machineData.name}`,
           description: `UNVERIFIED AI schedule proposal. Planner must confirm task, interval, units, OEM evidence and next due date before activation.`,
@@ -959,6 +963,32 @@ export async function POST(request: NextRequest) {
       });
       summary.pmSchedules++;
     }
+
+      // An audit record must commit with the machine and its proposed
+      // BOM, inventory and PM data, never as a best-effort later write.
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'create',
+          entityType: 'asset',
+          entityId: mainAsset.id,
+          newValues: JSON.stringify({
+            source: 'ai-generate',
+            verificationStatus: 'unverified_draft',
+            machineName: machineName.trim(),
+            functionalLocationId: installation.id,
+            assetTag: mainAssetTag,
+            codeFormat: 'machine-A##-C##-P##',
+            subsystems: summary.subsystems,
+            components: summary.components,
+            inventoryItems: summary.inventoryItems,
+            pmTemplates: summary.pmTemplates,
+            pmSchedules: summary.pmSchedules,
+          }),
+        },
+      });
+      return mainAsset;
+    }, { timeout: 90000, maxWait: 10000 });
 
     // ================================================================
     // 7. CREATE DIGITAL TWIN
@@ -1236,34 +1266,6 @@ export async function POST(request: NextRequest) {
       }
     } catch {
       // Non-fatal - image generation is a nice-to-have
-    }
-
-    // ================================================================
-    // 10. CREATE AUDIT LOG
-    // ================================================================
-    try {
-      await db.auditLog.create({
-        data: {
-          userId: session.userId,
-          action: 'create',
-          entityType: 'asset',
-          entityId: mainAsset.id,
-          newValues: JSON.stringify({
-            source: 'ai-generate',
-            verificationStatus: 'unverified_draft',
-            machineName: machineName.trim(),
-            functionalLocationId: installation.id,
-            assetTag: mainAssetTag,
-            codeFormat: 'machine-A##-C##-P##',
-            subsystems: summary.subsystems,
-            components: summary.components,
-            inventoryItems: summary.inventoryItems,
-            pmTemplates: summary.pmTemplates,
-          }),
-        },
-      });
-    } catch {
-      // Non-fatal
     }
 
     // ================================================================

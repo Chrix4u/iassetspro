@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { formatDate, formatDateTime, getInitials, LoadingSkeleton, formatCurrency } from '@/components/shared/helpers';
 import { MachineVisualExplorer } from '@/components/digital-twin/MachineVisualExplorer';
+import { AssetCommissioningReadinessPanel } from '@/components/assets/AssetCommissioningReadinessPanel';
 import { DigitalTwinViewer } from '@/components/digital-twin/DigitalTwinViewer';
 import { HierarchyCommissioningPanel } from '@/components/assets/HierarchyCommissioningPanel';
 import { AssetMetersPanel } from '@/components/assets/AssetMetersPanel';
@@ -695,6 +696,7 @@ export function AssetDetailPage({ id }: { id: string }) {
         <div className="px-4 sm:px-6 pb-6 w-full min-w-0">
             {/* ==================== OVERVIEW TAB ==================== */}
             <TabsContent value="overview" className="mt-4 space-y-4">
+              <AssetCommissioningReadinessPanel assetId={id} />
               {asset.description && (
                 <Card className="min-w-0 gap-3 border-0 py-4 shadow-sm sm:py-6">
                   <CardHeader className="px-4 pb-0 sm:px-6"><CardTitle className="text-sm">Description</CardTitle></CardHeader>

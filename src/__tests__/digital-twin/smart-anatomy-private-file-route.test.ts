@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm, writeFile, unlink, symlink, truncate } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, unlink, symlink, truncate, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
@@ -187,21 +187,23 @@ describe('private CAD binary access, end-to-end route behavior with mocked ident
     const altered = join(directory, 'sparse-disallowed.glb');
     await writeFile(altered, Buffer.alloc(0), { mode: 0o600 });
     await truncate(altered, 25 * 1024 * 1024 + 1);
-    await unlink(original);
-    await symlink(altered, original);
+    // Make the too-large sparse file the actual regular model file,
+    // without a symlink, to prove that fstat rejects it before readFile.
+    const saved = join(directory, 'saved-authentic.glb');
+    await rename(original, saved);
+    await rename(altered, original);
     try {
-      // Even when a mistaken database record claims the giant file size,
-      // it must never enter the authenticated response or be buffered.
       mocked.findUnique.mockResolvedValue({
         id, filePath, fileSize: 25 * 1024 * 1024 + 1,
-        isActive: true, asset: { plantId: 'plant-a' },
+        isActive: true, uploadedById: 'uploader-1',
+        asset: { plantId: 'plant-a' },
       });
       const response = await GET(req(), params);
-      expect([404, 409]).toContain(response.status);
+      expect(response.status).toBe(409);
+      expect((await response.json()).error).toContain('size');
     } finally {
       await unlink(original);
-      await writeFile(original, fixture, { mode: 0o600 });
-      await unlink(altered);
+      await rename(saved, original);
     }
   });
 

@@ -766,8 +766,10 @@ export async function POST(request: NextRequest) {
           quantity: entry.quantity,
           unit: entry.unit,
           specification: entry.specification,
-          status: 'active',
-          revision: 'A',
+          // AI guesses cannot enter the released engineering bill of
+          // materials or parts issuance before a maintainer approves them.
+          status: 'under_review',
+          revision: 'DRAFT-AI',
         })),
         skipDuplicates: false,
       });
@@ -1168,13 +1170,15 @@ export async function POST(request: NextRequest) {
       await db.systemDiagram.create({
         data: {
           plantId,
+          assetId: mainAsset.id,
           name: `System Diagram - ${machineData.name}`,
           description: `UNVERIFIED ILLUSTRATIVE SYSTEM DIAGRAM (NOT OEM CAD) for ${machineData.name}. Shows ${diagramNodes.length} nodes (1 machine + ${ssCount} subsystems + ${summary.components} components) with ${diagramEdges.length} connections. Each node is labeled and zoomable. Components use specialized node types (motors, pumps, valves, sensors, etc.) for visual clarity.`,
           type: 'process',
           nodes: JSON.stringify(diagramNodes),
           edges: JSON.stringify(diagramEdges),
           viewport: JSON.stringify({ x: 0, y: 0, zoom }),
-          isActive: true,
+          // Only engineer-reviewed diagrams may be published plant-wide.
+          isActive: false,
           createdById: session.userId,
         },
       });

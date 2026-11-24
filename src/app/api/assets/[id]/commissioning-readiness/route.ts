@@ -41,7 +41,14 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
       locationAssignments,registeredComponents,uncommissionedComponents,
       meters,photos,models,pm,scheduledShifts,shiftsWithLeader,approvedProductionShifts,
     ]=await Promise.all([
-      db.assetFunctionalLocationAssignment.count({where:{assetId:id,endedAt:null}}),
+      db.assetFunctionalLocationAssignment.count({where:{
+        assetId:id,endedAt:null,
+        functionalLocation:{
+          status:'active',plantId:asset.plantId,
+          hierarchySystem:{isActive:true},
+          hierarchyLevel:{isActive:true,allowAssetAssignment:true},
+        },
+      }}),
       db.componentRegistry.count({where:{assetId:id}}),
       db.componentRegistry.count({where:{assetId:id,lifecycleStatus:'uncommissioned'}}),
       db.assetMeter.findMany({where:{assetId:id,isActive:true},

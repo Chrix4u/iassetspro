@@ -110,7 +110,14 @@ describe('plant-scoped live machine commissioning readiness API',()=>{
   });
   it('queries the selected machine only and the real roster and photo tables',async()=>{
     await GET(request(),params);
-    expect(mocks.location).toHaveBeenCalledWith({where:{assetId:machine,endedAt:null}});
+    expect(mocks.location).toHaveBeenCalledWith({where:{
+      assetId:machine,endedAt:null,
+      functionalLocation:{
+        status:'active',plantId:'plant-a',
+        hierarchySystem:{isActive:true},
+        hierarchyLevel:{isActive:true,allowAssetAssignment:true},
+      },
+    }});
     expect(mocks.component).toHaveBeenCalledWith({where:{assetId:machine,lifecycleStatus:'uncommissioned'}});
     expect(mocks.photos).toHaveBeenCalledWith(expect.objectContaining({
       where:{assetId:machine,visualType:'photo',isActive:true},

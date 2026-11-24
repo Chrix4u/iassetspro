@@ -3,6 +3,7 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 import { isPrivateSmartAnatomyModel, reviewedCadMappingsAreFrozen } from '@/lib/smart-anatomy/reviewed-model';
+import { CadMappingFrozenError, CadMappingConflictError, writeCadBindingUnderModelLock } from '@/lib/smart-anatomy/private-cad-mapping-lock';
 
 export async function GET(request: NextRequest) {
   try {
@@ -165,7 +166,16 @@ export async function POST(request: NextRequest) {
         error: 'A binding for this CAD name or exact source path already exists on this model' }, { status: 409 });
     }
 
-    const binding = await db.assetMeshBinding.create({
+    const binding = await writeCadBindingUnderModelLock(model, async tx => {
+      const latest = await tx.assetMeshBinding.findFirst({
+        where: { modelId, OR: [
+          { meshName },
+          ...(meshPath ? [{ meshPath }] : []),
+        ] },
+        select: { id: true },
+      });
+      if (latest) throw new CadMappingConflictError('CAD name or exact source path already belongs to another binding');
+      const created = await tx.assetMeshBinding.create({
       data: {
         modelId,
         meshName,
@@ -187,19 +197,23 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    await db.auditLog.create({
+      await tx.auditLog.create({
       data: {
         userId: session.userId,
         action: 'create',
         entityType: 'asset_mesh_binding',
-        entityId: binding.id,
+        entityId: created.id,
         newValues: JSON.stringify({ modelId, meshName, assetId, componentId: componentId || null }),
       },
+    });
+
+      return created;
     });
 
     return NextResponse.json({ success: true, data: binding }, { status: 201 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to create mesh binding';
-    return NextResponse.json({ success: false, error: message }, { status: 500 });
+    const status = error instanceof CadMappingFrozenError || error instanceof CadMappingConflictError ? 409 : 500;
+    return NextResponse.json({ success: false, error: message }, { status });
   }
 }

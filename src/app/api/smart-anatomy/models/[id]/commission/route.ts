@@ -3,6 +3,7 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { assertPrivateCadStorageReady, privateCadFilePath, privateCadStorageRoot } from '@/lib/smart-anatomy/private-cad-storage';
 import { auditedGlbMeshPaths } from '@/lib/smart-anatomy/mesh-source-paths';
+import { validateOemSourceIdentity, type OemSourceIdentity } from '@/lib/smart-anatomy/oem-identity';
 import { MAX_PRIVATE_CAD_UPLOAD_BYTES } from '@/lib/smart-anatomy/validate-glb';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
@@ -38,7 +39,7 @@ export async function POST(
       where: { id },
       select: { id: true, assetId: true, uploadedById: true,
         filePath: true, fileSize: true, isActive: true,
-        asset: { select: { plantId: true } } },
+        asset: { select: { plantId: true, manufacturer: true, model: true, serialNumber: true } } },
     });
     if (!model || !/^\/api\/smart-anatomy\/models\/[0-9a-f-]{36}\/file$/i.test(model.filePath) ||
         model.filePath !== '/api/smart-anatomy/models/' + id + '/file') {
@@ -78,10 +79,26 @@ export async function POST(
       orderBy: { createdAt: 'asc' },
     });
     let expectedChecksum: string | null = null;
+    let claimOrigin: string | null = null;
+    let claimedMachine: OemSourceIdentity | null = null;
+    let expectedOriginalSha256: string | null = null;
     try {
-      const source = JSON.parse(storedSource?.newValues || '{}') as { checksum?: unknown };
+      const source = JSON.parse(storedSource?.newValues || '{}') as {
+        checksum?: unknown;
+        sourceOrigin?: unknown;
+        sourceMachineClaim?: OemSourceIdentity | null;
+        conversionEvidence?: { sourceSha256?: unknown; glbSha256?: unknown } | null;
+      };
       if (typeof source.checksum === 'string' && /^[0-9a-f]{64}$/i.test(source.checksum)) {
         expectedChecksum = source.checksum;
+      }
+      if (typeof source.sourceOrigin === 'string') claimOrigin = source.sourceOrigin;
+      claimedMachine = source.sourceMachineClaim || null;
+      if (source.conversionEvidence &&
+          typeof source.conversionEvidence.sourceSha256 === 'string' &&
+          /^[0-9a-f]{64}$/i.test(source.conversionEvidence.sourceSha256) &&
+          source.conversionEvidence.glbSha256 === expectedChecksum) {
+        expectedOriginalSha256 = source.conversionEvidence.sourceSha256.toLowerCase();
       }
     } catch {
       // Corrupt or missing original source attestation is never safe to approve.
@@ -90,6 +107,15 @@ export async function POST(
       return NextResponse.json({
         success: false, error: 'Original CAD checksum attestation is missing',
       }, { status: 409 });
+    }
+
+    if (claimOrigin === 'licensed-oem') {
+      const identity = validateOemSourceIdentity(claimedMachine || {}, model.asset);
+      if (!identity.valid) {
+        return NextResponse.json({
+          success: false, error: identity.reason,
+        }, { status: 409 });
+      }
     }
 
     const root = privateCadStorageRoot();
@@ -126,7 +152,7 @@ export async function POST(
     const verifiedBindings = await db.assetMeshBinding.findMany({
       where: { modelId: id, assetId: model.assetId, componentId: { not: null } },
       select: {
-        meshPath: true, meshName: true, componentId: true,
+        id: true, meshPath: true, meshName: true, componentId: true,
         component: { select: { assetId: true } },
       },
     });
@@ -151,6 +177,23 @@ export async function POST(
       mappedPaths.add(binding.meshPath);
     }
     const linkedComponents = verifiedBindings.length;
+    const unmappedSourcePaths = importedPaths.size - mappedPaths.size;
+    // A multi-part OEM assembly can contain unmaintainable decorative
+    // geometry. It may remain visual-only, but the engineer must see and
+    // acknowledge partial source coverage before approving the revision.
+    if (unmappedSourcePaths > 0 && body?.unmappedNodesAcknowledged !== true) {
+      return NextResponse.json({
+        success: false,
+        error: `CAD contains ${unmappedSourcePaths} unmapped source meshes. Engineer must acknowledge they are visual-only until linked.`,
+      }, { status: 409 });
+    }
+    const bindingFingerprint = (bindings: Array<{
+      id: string; meshPath: string | null; componentId: string | null;
+      component: {assetId: string | null} | null;
+    }>): string => JSON.stringify(bindings.map(item => [
+      item.id, item.meshPath, item.componentId, item.component?.assetId || null,
+    ]).sort((a,b) => String(a[0]).localeCompare(String(b[0]))));
+    const reviewedFingerprint = bindingFingerprint(verifiedBindings);
 
     // Serialize reviewer approval with engineering withdrawal using a
     // PostgreSQL row lock. A withdrawal committed after the initial
@@ -167,6 +210,50 @@ export async function POST(
       if (!current || latestWithdrawal) return { status: 'withdrawn' as const };
       if (current.isActive) return { status: 'already-approved' as const };
 
+      // A draft mapping may have changed after the initial source-path audit,
+      // before this transaction obtained its model lock. Re-read the exact
+      // same fields under the shared lock used by all mapping writers.
+      // A changed revision must NEVER be approved using stale evidence.
+      const lockedBindings = await tx.assetMeshBinding.findMany({
+        where: { modelId: id, assetId: model.assetId, componentId: { not: null } },
+        select: {
+          id: true, meshPath: true, componentId: true,
+          component: { select: { assetId: true } },
+        },
+      });
+      if (bindingFingerprint(lockedBindings) !== reviewedFingerprint) {
+        return { status: 'bindings-changed' as const };
+      }
+
+      // Converted licensed OEM CAD must have its actual original source
+      // bytes independently compared to the converter's recorded digest.
+      // This does NOT certify OEM licensing/drawing authenticity.
+      let originalCadFileChecksumVerified = false;
+      if (claimOrigin === 'licensed-oem' && expectedOriginalSha256) {
+        const checked = await tx.auditLog.findFirst({
+          where: {entityType:'asset_model',entityId:id,action:'source_verified'},
+          select: {newValues:true},
+          orderBy: {createdAt:'desc'},
+        });
+        try {
+          const evidence = JSON.parse(checked?.newValues || '{}') as {
+            sourceSha256?: unknown;
+            verifiedById?: unknown;
+            independentlyComparedOriginalCadBytes?: unknown;
+          };
+          originalCadFileChecksumVerified =
+            evidence.sourceSha256 === expectedOriginalSha256 &&
+            evidence.independentlyComparedOriginalCadBytes === true &&
+            typeof evidence.verifiedById === 'string' &&
+            evidence.verifiedById !== model.uploadedById;
+        } catch {
+          originalCadFileChecksumVerified = false;
+        }
+        if (!originalCadFileChecksumVerified) {
+          return {status:'source-not-verified' as const};
+        }
+      }
+
       const updated = await tx.assetModel.update({
         where: { id }, data: { isActive: true },
       });
@@ -182,7 +269,17 @@ export async function POST(
             geometryReviewed: true, componentMappingReviewed: true,
             linkedComponents, importedMeshPaths: importedPaths.size,
             exactSourcePathMatches: mappedPaths.size,
-            originalSourceIntegrityVerified: true,
+            unmappedSourceMeshCount: unmappedSourcePaths,
+            mappingCoveragePercent: Math.round(10000 * mappedPaths.size / importedPaths.size) / 100,
+            unmappedNodesAcknowledged: unmappedSourcePaths > 0,
+            // This verifies uploaded GLB bytes against the immutable upload
+            // audit, NOT the original STEP/IGES/BREP file. An offline
+            // source digest comparison remains separate engineering evidence.
+            uploadedGlbIntegrityVerified: true,
+            originalCadFileChecksumVerified,
+            manufacturerSourceAuthenticityCertified: false,
+            oemNameplateSourceClaimMatched: claimOrigin === 'licensed-oem' ? true : null,
+            verifiedDrawingRevision: null,
             // Technical review does not approve any particular physical
             // disassembly instructions or automated maintenance.
             maintenanceProcedureApproved: false,
@@ -199,6 +296,16 @@ export async function POST(
     if (outcome.status==='already-approved') {
       return NextResponse.json({
         success:false,error:'CAD was approved by another engineer; refresh the review state',
+      }, {status:409});
+    }
+    if (outcome.status==='source-not-verified') {
+      return NextResponse.json({
+        success:false,error:'Original manufacturer CAD bytes were not independently verified against the conversion manifest.',
+      }, {status:409});
+    }
+    if (outcome.status==='bindings-changed') {
+      return NextResponse.json({
+        success:false,error:'CAD mappings changed during review. Refresh and independently recheck the exact source nodes.',
       }, {status:409});
     }
     return NextResponse.json({

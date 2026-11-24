@@ -5,6 +5,8 @@ import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { inspectSelfContainedGlb, MAX_PRIVATE_CAD_UPLOAD_BYTES } from '@/lib/smart-anatomy/validate-glb';
+import { validateOfflineCadEvidence } from '@/lib/smart-anatomy/offline-cad-evidence';
+import { validateOemSourceIdentity } from '@/lib/smart-anatomy/oem-identity';
 import { assertPrivateCadStorageReady, privateCadFilePath, privateCadStorageRoot } from '@/lib/smart-anatomy/private-cad-storage';
 import { MultipartUploadError, MAX_CAD_MULTIPART_OVERHEAD, readBoundedMultipart } from '@/lib/smart-anatomy/limited-multipart';
 
@@ -58,6 +60,13 @@ export async function POST(req: NextRequest) {
     const name = String(form.get('name') || '').trim();
     const sourceOrigin = String(form.get('sourceOrigin') || '');
     const sourceNote = String(form.get('sourceNote') || '').trim();
+    const sourceManifest = form.get('sourceManifest');
+    // The OEM identity is a *source claim*, not automatically verified
+    // manufacturer data in the asset register.
+    const oemManufacturer = String(form.get('oemManufacturer') || '').trim();
+    const oemModel = String(form.get('oemModel') || '').trim();
+    const drawingRevision = String(form.get('drawingRevision') || '').trim();
+    const nameplateSerial = String(form.get('nameplateSerial') || '').trim();
 
     if (!file || typeof file === 'string' || !file.name.toLowerCase().endsWith('.glb') ||
         !Number.isSafeInteger(file.size) || file.size <= 0 || file.size > MAX_PRIVATE_CAD_UPLOAD_BYTES) {
@@ -66,25 +75,66 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
     if (!assetId || name.length < 3 || name.length > 160 ||
-        !['licensed-oem', 'site-owned-scan', 'original-training'].includes(sourceOrigin) ||
+        !['licensed-oem', 'site-owned-scan', 'site-owned-design', 'original-training'].includes(sourceOrigin) ||
         sourceNote.length < 8 || sourceNote.length > 1000) {
       return NextResponse.json({
         success: false, error: 'Asset, model name and documented legal model origin are required',
       }, { status: 400 });
     }
 
+    if (sourceOrigin === 'licensed-oem' &&
+        ([oemManufacturer, oemModel, drawingRevision, nameplateSerial].some(v =>
+          v.length < 2 || v.length > 140 || [...v].some(char => char.charCodeAt(0) < 32)))) {
+      return NextResponse.json({
+        success: false,
+        error: 'Licensed OEM CAD requires documented manufacturer, exact model, drawing revision and installed machine serial',
+      }, { status: 400 });
+    }
+
     const asset = await db.asset.findUnique({
       where: { id: assetId },
-      select: { id: true, plantId: true },
+      select: { id: true, plantId: true, manufacturer: true, model: true, serialNumber: true },
     });
     if (!asset) return NextResponse.json({ success: false, error: 'Asset not found' }, { status: 404 });
     if (!canAccessPlantStrict(scope, asset.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
+    if (sourceOrigin === 'licensed-oem') {
+      // Draft import permits missing registered nameplate fields, but never
+      // known disagreements. Commissioning will require all fields matched.
+      const identity = validateOemSourceIdentity(
+        { oemManufacturer, oemModel, drawingRevision, nameplateSerial },
+        asset, false,
+      );
+      if (!identity.valid) {
+        return NextResponse.json({
+          success: false, error: identity.reason,
+        }, { status: 409 });
+      }
+    }
+
     const bytes = new Uint8Array(await file.arrayBuffer());
     const geometry = inspectSelfContainedGlb(bytes);
     const checksum = createHash('sha256').update(bytes).digest('hex');
+    let conversionEvidence: ReturnType<typeof validateOfflineCadEvidence> | null = null;
+    if (sourceManifest !== null) {
+      if (typeof sourceManifest === 'string' || !sourceManifest.name.toLowerCase().endsWith('.json') ||
+          sourceManifest.size > 32 * 1024 || sourceManifest.size < 20) {
+        return NextResponse.json({success:false,error:'Offline CAD evidence must be a small JSON sidecar'}, {status:400});
+      }
+      try {
+        const evidenceText = await sourceManifest.text();
+        const evidence = JSON.parse(evidenceText) as unknown;
+        conversionEvidence = validateOfflineCadEvidence(evidence, {
+          glbSha256: checksum, glbByteLength: bytes.byteLength, sourceOrigin,
+        });
+      } catch {
+        return NextResponse.json({
+          success:false,error:'Offline CAD sidecar does not match the selected GLB and source category',
+        }, {status:400});
+      }
+    }
     const id = randomUUID();
     const filePath = '/api/smart-anatomy/models/' + id + '/file';
     storedFile = privateCadFilePath(root, id);
@@ -109,6 +159,11 @@ export async function POST(req: NextRequest) {
             entityType: 'asset_model', entityId: id,
             newValues: JSON.stringify({
               assetId, sourceOrigin, sourceNote, checksum,
+              sourceMachineClaim: sourceOrigin === 'licensed-oem' ? {
+                oemManufacturer, oemModel, drawingRevision, nameplateSerial,
+                sourceNameplateMatchAttested: false,
+              } : null,
+              conversionEvidence,
               status: 'awaiting-engineer-commissioning',
               ...geometry,
             }),

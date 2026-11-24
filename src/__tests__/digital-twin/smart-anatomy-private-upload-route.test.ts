@@ -135,4 +135,58 @@ describe('Smart Anatomy private GLB upload API, executable multipart tests', () 
     expect(Buffer.from(await readFile(disk)).equals(file)).toBe(true);
     expect(mocked.auditCreate).toHaveBeenCalled();
   });
+  it('accepts licensed OEM CAD only as an uncommissioned machine-specific drawing claim', async () => {
+    const form = new FormData();
+    form.set('assetId', 'machine-1');
+    form.set('name', 'Actual OEM drawing revision A');
+    form.set('sourceOrigin', 'licensed-oem');
+    form.set('sourceNote', 'Licensed source file with machine-specific revision evidence');
+    form.set('oemManufacturer', 'Siemens');
+    form.set('oemModel', 'S100-M2');
+    form.set('drawingRevision', 'Rev A');
+    form.set('nameplateSerial', 'SN-0001');
+    form.set('file', new NodeFile([new Uint8Array(file)], 'oem.glb',
+      {type:'model/gltf-binary'}) as unknown as Blob, 'oem.glb');
+    mocked.assetFindUnique.mockResolvedValue({
+      id:'machine-1',plantId:'plant-1',manufacturer:'SIEMENS',
+      model:'s100-m2',serialNumber:'sn-0001',
+    });
+    const result=await POST(new NextRequest('http://localhost/api/smart-anatomy/models', {
+      method:'POST',body:form,
+    }));
+    expect(result.status).toBe(201);
+    const created=mocked.modelCreate.mock.calls[0][0].data;
+    expect(created.isActive).toBe(false);
+    const audit=JSON.parse(mocked.auditCreate.mock.calls[0][0].data.newValues);
+    expect(audit.sourceMachineClaim.oemModel).toBe('S100-M2');
+    expect(audit.sourceMachineClaim.nameplateSerial).toBe('SN-0001');
+    expect(audit.sourceMachineClaim.sourceNameplateMatchAttested).toBe(false);
+  });
+
+  it('rejects an OEM CAD with missing nameplate evidence or mismatched model before private writes', async () => {
+    const makeRequest=(model:string,serial:string)=>{
+      const form=new FormData();
+      form.set('assetId','machine-1');
+      form.set('name','OEM machine geometry');
+      form.set('sourceOrigin','licensed-oem');
+      form.set('sourceNote','Exact drawing revision and license retained by plant engineer');
+      form.set('oemManufacturer','Siemens');
+      form.set('oemModel',model);
+      form.set('drawingRevision','Revision A');
+      form.set('nameplateSerial',serial);
+      form.set('file',new NodeFile([new Uint8Array(file)],'cad.glb',
+        {type:'model/gltf-binary'}) as unknown as Blob,'cad.glb');
+      return new NextRequest('http://localhost/api/smart-anatomy/models',
+        {method:'POST',body:form});
+    };
+    mocked.assetFindUnique.mockResolvedValue({
+      id:'machine-1',plantId:'plant-1',manufacturer:'Siemens',model:'S100-M2',
+      serialNumber:'SN-0001',
+    });
+    expect((await POST(makeRequest('S100-M3','SN-0001'))).status).toBe(409);
+    expect((await POST(makeRequest('S100-M2',''))).status).toBe(400);
+    expect(mocked.modelCreate).not.toHaveBeenCalled();
+    expect(await readdir(storage)).toHaveLength(0);
+  });
+
 });

@@ -84,3 +84,61 @@ test('isolated mobile Work Center can be created, viewed, edited and deactivated
   await page.getByRole('menuitem', { name: 'Deactivate' }).click();
   await expect(page.getByRole('cell', { name: updatedName, exact: true })).toHaveCount(0, { timeout: 15_000 });
 });
+
+test('hierarchy builder preserves input focus and keeps creation visible on short screens', async ({ page, request }) => {
+  requireIsolatedUat();
+  test.setTimeout(90_000);
+  await page.setViewportSize({ width: 1366, height: 650 });
+  await loginAsIsolatedAdmin(page, request);
+  await page.goto('/#/assets-hierarchy');
+  await expect(page.getByRole('heading', { name: 'Asset & Location Hierarchy' })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole('button', { name: 'New hierarchy system' }).click();
+  const dialog = page.getByTestId('hierarchy-system-dialog');
+  const body = dialog.getByTestId('hierarchy-system-body');
+  const create = dialog.getByRole('button', { name: 'Create hierarchy system', exact: true });
+  await expect(dialog).toBeVisible();
+  const label = dialog.getByRole('textbox', { name: 'Level 3 label', exact: true });
+  await label.fill('');
+  await label.pressSequentially('Department', { delay: 25 });
+  await expect(label).toHaveValue('Department');
+  await expect(label).toBeFocused();
+  const prefix = dialog.getByRole('textbox', { name: 'Level 3 prefix', exact: true });
+  await prefix.fill('');
+  await prefix.pressSequentially('DEP', { delay: 25 });
+  await expect(prefix).toHaveValue('DEP');
+  await expect(prefix).toBeFocused();
+  await dialog.getByRole('button', { name: 'Move level 3 down' }).click();
+  await expect(dialog.getByRole('textbox', { name: 'Level 4 label', exact: true })).toHaveValue('Department');
+  await dialog.getByRole('button', { name: 'Level', exact: true }).click();
+  await expect(dialog.getByTestId('hierarchy-level-row')).toHaveCount(6);
+  await dialog.getByRole('button', { name: 'Remove level 6' }).click();
+  await expect(dialog.getByTestId('hierarchy-level-row')).toHaveCount(5);
+
+  for (const viewport of [{ width: 1366, height: 650 }, { width: 390, height: 600 }]) {
+    await page.setViewportSize(viewport);
+    await expect(create).toBeInViewport({ ratio: 1 });
+    const bounds = (await dialog.boundingBox())!;
+    expect(bounds.width).toBeLessThanOrEqual(Math.min(761, viewport.width - 30));
+    expect(bounds.y).toBeGreaterThanOrEqual(0);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height + 1);
+    await body.evaluate(node => { node.scrollTop = node.scrollHeight; });
+    await expect(create).toBeInViewport({ ratio: 1 });
+    expect(await body.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(2);
+  }
+
+  // Create only in the disposable platform E2E database. Never modify live hierarchy data.
+  const uniqueCode = 'UAT-HIER-' + Date.now();
+  await dialog.getByPlaceholder('e.g. Primary Plant Structure').fill(uniqueCode);
+  await dialog.getByPlaceholder('PRIMARY', { exact: true }).fill(uniqueCode);
+  const primary = dialog.getByRole('switch', { name: 'Primary system', exact: true });
+  if (await primary.getAttribute('aria-checked') === 'true') await primary.click();
+  const saved = page.waitForResponse(response => response.url().endsWith('/api/hierarchy-systems') && response.request().method() === 'POST');
+  await create.click();
+  const response = await saved;
+  expect(response.status()).toBe(201);
+  const payload = response.request().postDataJSON();
+  expect(payload.isPrimary).toBe(false);
+  expect(payload.levels[3]).toMatchObject({ label: 'Department', codePrefix: 'DEP' });
+  expect(payload.levels.every((level: Record<string, unknown>) => !('draftId' in level))).toBe(true);
+  await expect(dialog).toBeHidden({ timeout: 15_000 });
+});

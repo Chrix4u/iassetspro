@@ -136,6 +136,25 @@ describe('AI draft asset commissioning safety guards', () => {
     expect(diagram).toContain('String(summary.inventoryItems)');
   });
 
+  it('never presents AI machine or component condition, criticality or specifications as verified', () => {
+    const registration=route.slice(
+      route.indexOf('const mainAsset = await db.$transaction(async tx => {'),
+      route.indexOf('// 7. CREATE DIGITAL TWIN'),
+    );
+    expect(registration).toContain("acquisitionCondition: 'unknown'");
+    expect(registration).toContain("condition: 'unknown'");
+    expect(registration).not.toContain("condition: 'new'");
+    expect(registration).toContain("criticality: 'medium'");
+    expect(registration).not.toContain("criticality: machineData.criticality || 'medium'");
+    expect(registration).not.toContain("criticality: component.criticality || 'medium'");
+    expect(registration).toContain('suggestedCriticality: machineData.criticality');
+    expect(registration).toContain('suggestedCriticality: subsystem.criticality');
+    expect(registration).toContain('suggestedCriticality: component.criticality');
+    expect(registration).toContain('suggestedSpecifications: component.specification || {}');
+    expect(registration).not.toContain('specification: JSON.stringify(component.specification || {})');
+    expect(registration).toContain("UNVERIFIED AI DRAFT: ");
+  });
+
   it('makes actual plant path and explicit concept approval mandatory in the generator modal', () => {
     expect(dialog).toContain('<FunctionalLocationPicker');
     expect(dialog).toContain('plantId={plantId}');

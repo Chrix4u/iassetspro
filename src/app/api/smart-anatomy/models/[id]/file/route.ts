@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises';
+import { open } from 'node:fs/promises';
+import { constants } from 'node:fs';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
@@ -13,25 +14,33 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = getSession(req);
   if (!session) return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
-  if (!isAdmin(session) && !hasPermission(session, 'digital_twin.view')) {
+  if (!isAdmin(session) && !hasPermission(session, 'digital_twin.view') &&
+      !hasPermission(session, 'digital_twin.manage')) {
     return NextResponse.json({ error: 'Insufficient permissions' }, { status: 403 });
   }
   const scope = await getPlantScope(req, session);
   if (scope.denyAccess) return NextResponse.json({ error: 'Access denied' }, { status: 403 });
 
   const { id } = await params;
-  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
     return NextResponse.json({ error: 'Model not found' }, { status: 404 });
   }
   const model = await db.assetModel.findUnique({
     where: { id },
-    select: { filePath: true, fileSize: true, asset: { select: { plantId: true } } },
+    select: { filePath: true, fileSize: true, isActive: true, uploadedById: true,
+      asset: { select: { plantId: true } } },
   });
   if (!model || model.filePath !== '/api/smart-anatomy/models/' + id + '/file') {
     return NextResponse.json({ error: 'Model not found' }, { status: 404 });
   }
   if (!canAccessPlantStrict(scope, model.asset.plantId)) {
     return NextResponse.json({ error: 'Access denied' }, { status: 403 });
+  }
+  // The same plant is not sufficient authorization to inspect an
+  // uncommissioned proprietary manufacturer drawing. Ordinary Digital Twin
+  // viewers receive only independently commissioned/approved models.
+  if (!model.isActive && !isAdmin(session) && !hasPermission(session, 'digital_twin.manage')) {
+    return NextResponse.json({ error: 'Private CAD is awaiting independent engineering approval' }, { status: 403 });
   }
 
   const root = privateCadStorageRoot();
@@ -64,8 +73,28 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   try {
-    const file = await readFile(privateCadFilePath(root, id));
-    if (file.byteLength !== model.fileSize || file.byteLength > MAX_PRIVATE_CAD_UPLOAD_BYTES) {
+    // Never read an unbounded or final-component-symlinked file. Pre-check
+    // the descriptor's type and size *before* allocating file bytes.
+    const handle = await open(privateCadFilePath(root, id),
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    let file: Buffer;
+    try {
+      const stat = await handle.stat();
+      if (!stat.isFile() || stat.size <= 0 ||
+          stat.size !== model.fileSize || stat.size > MAX_PRIVATE_CAD_UPLOAD_BYTES) {
+        return NextResponse.json({ error: 'CAD file size verification failed' }, { status: 409 });
+      }
+      file = await handle.readFile();
+      const after = await handle.stat();
+      if (after.dev !== stat.dev || after.ino !== stat.ino ||
+          after.size !== stat.size || after.mtimeMs !== stat.mtimeMs ||
+          after.ctimeMs !== stat.ctimeMs) {
+        return NextResponse.json({ error: 'CAD file changed during verification' }, { status: 409 });
+      }
+    } finally {
+      await handle.close();
+    }
+    if (file.byteLength !== model.fileSize) {
       return NextResponse.json({ error: 'CAD file size verification failed' }, { status: 409 });
     }
     const actualSha256 = createHash('sha256').update(file).digest();

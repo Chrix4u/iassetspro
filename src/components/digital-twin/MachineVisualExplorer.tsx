@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DigitalTwinViewer } from './DigitalTwinViewer';
 import { buildAnatomyReviewCsv, safeAnatomyExportFilename } from './anatomyReviewExport';
 import { PrivateCadUploader, type PrivateCadModel } from './PrivateCadUploader';
+import { SiteScanPanel } from './SiteScanPanel';
 import { normalizeDigitalTwinScene } from '@/lib/digital-twin/normalize-scene';
 import type { AssetMeshBinding } from './InteractiveMesh';
 import type { ImportedAnatomyMesh } from './anatomyBindings';
@@ -1175,9 +1176,10 @@ export function MachineVisualExplorer({
         </CardHeader>
         <CardContent className="w-full min-w-0 max-w-full px-1.5 pt-0 sm:px-6">
           <Tabs value={mode} onValueChange={setMode} className="w-full min-w-0 max-w-full">
-            <TabsList className="grid h-auto w-full min-w-0 max-w-full grid-cols-2 gap-1 overflow-hidden sm:grid-cols-6">
+            <TabsList className="grid h-auto w-full min-w-0 max-w-full grid-cols-2 gap-1 overflow-hidden sm:grid-cols-4 xl:grid-cols-7">
               <TabsTrigger value="model3d" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Box className="mr-1 h-3.5 w-3.5 shrink-0" />3D Model</TabsTrigger>
               <TabsTrigger value="photo" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><ImageIcon className="mr-1 h-3.5 w-3.5 shrink-0"/>Site Photo</TabsTrigger>
+              <TabsTrigger value="site-scan" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Box className="mr-1 h-3.5 w-3.5 shrink-0"/>Real 3D Scan</TabsTrigger>
               <TabsTrigger value="realistic" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><ImageIcon className="mr-1 h-3.5 w-3.5 shrink-0" />AI Realistic</TabsTrigger>
               <TabsTrigger value="diagram" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Network className="mr-1 h-3.5 w-3.5 shrink-0" />Diagram</TabsTrigger>
               <TabsTrigger value="technical2d" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Focus className="mr-1 h-3.5 w-3.5 shrink-0" />Engineering 2D</TabsTrigger>
@@ -1206,6 +1208,10 @@ export function MachineVisualExplorer({
               </div>
             )}
 
+            <TabsContent value="site-scan" className="mt-3 space-y-2">
+              <SiteScanPanel assetId={asset.id} components={components}
+                canManage={canLinkAnatomy} onComponentSelect={id=>handle3DComponentSelect(id,'site-scan-hotspot')}/>
+            </TabsContent>
             <TabsContent value="model3d" className="mt-3 space-y-2">
               <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-[11px] leading-relaxed text-cyan-950">
                 Smart Anatomy moves actual imported GLB/glTF mesh geometry for exploded views, without inventing hidden machine parts. A single-piece model cannot be disassembled. Only engineer-mapped meshes may become PM or repair targets; unverified geometry stays visual-only.

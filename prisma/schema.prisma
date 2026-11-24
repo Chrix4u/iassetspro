@@ -1122,6 +1122,7 @@ model Asset {
   digitalTwin                   DigitalTwin?
   meshBindings                  AssetMeshBinding[]                  @relation("MeshBoundAsset")
   hotspotRefs                   TwinHotspot[]                       @relation("HotspotAsset")
+  siteScanHotspots              SiteScanHotspot[] @relation("SiteScanMachine")
   assetModels                   AssetModel[]
   maintenanceRequests           MaintenanceRequest[]                @relation("MRAsset")
   componentVisuals              ComponentVisual[]                   @relation("AssetComponentVisuals")
@@ -2554,6 +2555,7 @@ model AssetModel {
   asset      Asset              @relation(fields: [assetId], references: [id], onDelete: Cascade)
   uploadedBy User               @relation("AssetModelUploadedBy", fields: [uploadedById], references: [id])
   bindings   AssetMeshBinding[]
+  siteScanHotspots SiteScanHotspot[]
   scenes     DigitalTwinScene[]
   versions   ModelVersion[]     @relation("ModelVersions")
 
@@ -3262,6 +3264,7 @@ model ComponentRegistry {
   installedSpareParts  InstalledSparePart[]           @relation("InstalledSpareComponent")
   visuals              ComponentVisual[]
   meshBindings         AssetMeshBinding[]             @relation("MeshBoundComponent")
+  siteScanHotspots      SiteScanHotspot[]               @relation("SiteScanComponent")
 
   // Engineering BOM & Assembly Intelligence relations (Phase B)
   bomItems          BomRevisionItem[]      @relation("BomItemComponent")
@@ -5652,4 +5655,36 @@ model ProductionMachineProduct {
   @@unique([assetId, code])
   @@index([plantId, assetId, isActive])
   @@map("production_machine_products")
+}
+
+/**
+ * Photogrammetry/LiDAR site scan markers attach to real, already registered
+ * components. Scan surfaces are never treated as an OEM bill of materials.
+ * Positions are expressed in the imported glTF model's local metres.
+ */
+model SiteScanHotspot {
+  id           String   @id @default(cuid())
+  modelId      String
+  assetId      String
+  componentId  String
+  label        String
+  sourceMeshPath String? @db.Text
+  positionX    Float
+  positionY    Float
+  positionZ    Float
+  isApproved   Boolean  @default(false)
+  createdById  String
+  reviewedById String?
+  reviewNote   String?  @db.Text
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  model     AssetModel        @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  asset     Asset             @relation("SiteScanMachine", fields: [assetId], references: [id], onDelete: Cascade)
+  component ComponentRegistry @relation("SiteScanComponent", fields: [componentId], references: [id], onDelete: Cascade)
+
+  @@index([modelId, isApproved])
+  @@index([assetId])
+  @@index([componentId])
+  @@map("site_scan_hotspots")
 }

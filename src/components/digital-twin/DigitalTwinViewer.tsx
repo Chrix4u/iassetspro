@@ -23,7 +23,7 @@ import { api } from '@/lib/api';
 
 import { SceneLighting } from './SceneLighting';
 import { GroundPlane } from './GroundPlane';
-import { ModelLoader } from './ModelLoader';
+import { ModelLoader, type ScanOverlayHotspot, type ScanSurfacePick } from './ModelLoader';
 import { countImportedSourceGroups, type ImportedAnatomyMesh } from './anatomyBindings';
 import { InteractiveMesh, type AssetMeshBinding } from './InteractiveMesh';
 import { IoTOverlayLayer } from './IoTOverlayLayer';
@@ -53,6 +53,10 @@ import { Button } from '@/components/ui/button';
 // ============================================================================
 
 export interface DigitalTwinViewerProps {
+  /** As-built LiDAR/photogrammetry model; never inferred OEM internals. */
+  scanMode?: boolean;
+  scanHotspots?: ScanOverlayHotspot[];
+  onScanSurfacePick?: (selection: ScanSurfacePick) => void;
   /** Scene ID to load (null for empty state) */
   sceneId?: string | null;
   /** Override model URL (optional) */
@@ -351,6 +355,9 @@ export function DigitalTwinViewer({
   onAnatomyMeshList,
   anatomyRevision = 0,
   previewAssetModelId,
+  scanMode=false,
+  scanHotspots=[],
+  onScanSurfacePick,
 }: DigitalTwinViewerProps) {
   // ── Store state ──────────────────────────────────────────────────────────
   const currentScene = useDigitalTwinStore((s) => s.currentScene);
@@ -784,21 +791,25 @@ export function DigitalTwinViewer({
                   onLoadingComplete={handleModelLoadingComplete}
                   onMeshCount={setAnatomyMeshCount}
                   onAnatomyManifest={onAnatomyManifest}
+                  scanMode={scanMode}
+                  scanHotspots={scanHotspots}
+                  onScanSurfacePick={onScanSurfacePick}
+                  onScanHotspotSelect={componentId=>onComponentSelect?.(componentId,'site-scan-hotspot')}
                   onError={handleModelError}
                   onProgress={handleProgress}
                 />
               )}
 
               {/* Exploded view */}
-              <ExplodedView bindings={effectiveBindings} />
+              {!scanMode && <ExplodedView bindings={effectiveBindings} />}
 
               {/* Section plane */}
               <SectionPlane />
 
               {/* Original illustrative demo files must not show previous asset telemetry. */}
-              {!isIllustrativeDemo && <IoTOverlayLayer />}
-              {!isIllustrativeDemo && <HotspotLayer />}
-              {!isIllustrativeDemo && <AnnotationLayer />}
+              {!isIllustrativeDemo && !scanMode && <IoTOverlayLayer />}
+              {!isIllustrativeDemo && !scanMode && <HotspotLayer />}
+              {!isIllustrativeDemo && !scanMode && <AnnotationLayer />}
 
               {/* Background click handler (deselect) */}
               <BackgroundClickHandler />
@@ -871,7 +882,7 @@ export function DigitalTwinViewer({
           </div>
           {effectiveModelUrl && anatomyMeshCount > 0 && (
             <span className="text-[10px] text-slate-400" aria-live="polite">
-              {anatomySourceGroupCount === 0
+              {scanMode ? 'As-built exterior scan · ' + anatomyMeshCount.toLocaleString() + ' imported surfaces · no inferred internal parts' : anatomySourceGroupCount === 0
                 ? 'Inspecting imported geometry groups…'
                 : anatomySourceGroupCount === 1
                   ? anatomyMeshCount.toLocaleString() + ' mesh surfaces · one source geometry group; no explosion'
@@ -909,7 +920,8 @@ export function DigitalTwinViewer({
           viewMode={viewMode}
           onViewModeChange={handleViewModeChange}
           isTreeOpen={isTreeOpen}
-          anatomyGroupCount={anatomySourceGroupCount}
+          anatomyGroupCount={scanMode ? 0 : anatomySourceGroupCount}
+          allowExplosion={!scanMode}
           isIllustrativeDemo={isIllustrativeDemo}
         />
       )}
@@ -920,7 +932,7 @@ export function DigitalTwinViewer({
         onToggle={handleToggleTree}
         onMeshSelect={handleMeshSelectFromTree}
         anatomyMeshes={anatomyMeshes}
-        anatomyTitle={isPrivateCad ? 'Private CAD · pending commissioning' :
+        anatomyTitle={scanMode ? 'As-built site scan · visible surfaces only' : isPrivateCad ? 'Private CAD · pending commissioning' :
           isIllustrativeDemo ? 'Original illustrative CAD anatomy' : undefined}
         suppressSceneFallback={isIllustrativeDemo}
       />

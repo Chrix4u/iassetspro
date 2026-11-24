@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { Html } from '@react-three/drei';
 import { InteractiveMesh, type AssetMeshBinding } from './InteractiveMesh';
 import { buildImportedNodePaths, cloneImportedAnatomyMesh } from './anatomyModelMesh';
 import { matchImportedMeshBinding, type ImportedAnatomyMesh } from './anatomyBindings';
@@ -19,6 +20,13 @@ import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
 // Types
 // ============================================================================
 
+export interface ScanOverlayHotspot {
+  id:string;componentId:string;label:string;isApproved:boolean;
+  position:{x:number;y:number;z:number};
+}
+export interface ScanSurfacePick {
+  position:{x:number;y:number;z:number};sourceMeshPath:string;
+}
 export interface ModelLoaderProps {
   /** URL of the GLTF/GLB model to load */
   modelUrl: string | null;
@@ -42,6 +50,10 @@ export interface ModelLoaderProps {
   onMeshCount?: (count: number) => void;
   /** Exact imported glTF nodes, not inferred or generated machine anatomy. */
   onAnatomyManifest?: (meshes: ImportedAnatomyMesh[]) => void;
+  scanMode?:boolean;
+  scanHotspots?:ScanOverlayHotspot[];
+  onScanSurfacePick?:(value:ScanSurfacePick)=>void;
+  onScanHotspotSelect?:(componentId:string)=>void;
   /** Children rendered after the model */
   children?: ReactNode;
 }
@@ -442,6 +454,10 @@ function PerformanceMonitor({ enabled }: { enabled: boolean }) {
 // ============================================================================
 
 interface ProcessedModelProps {
+  scanMode?:boolean;
+  scanHotspots?:ScanOverlayHotspot[];
+  onScanSurfacePick?:(value:ScanSurfacePick)=>void;
+  onScanHotspotSelect?:(componentId:string)=>void;
   scene: THREE.Group;
   bindings: AssetMeshBinding[];
   onMeshCount?: (count: number) => void;
@@ -454,6 +470,10 @@ interface ProcessedModelProps {
 function ProcessedModel({
   scene,
   bindings,
+  scanMode=false,
+  scanHotspots=[],
+  onScanSurfacePick,
+  onScanHotspotSelect,
   onMeshCount,
   onAnatomyManifest,
   maxDimension,
@@ -599,11 +619,31 @@ function ProcessedModel({
             onClick={event=>{
               event.stopPropagation();
               const path=String(mesh.userData.__iAssetsSourceNodePath || mesh.name);
+              if(scanMode && onScanSurfacePick && groupRef.current){
+                // Store model-local metres, not world/camera/scaled coordinates.
+                const point=groupRef.current.worldToLocal(event.point.clone());
+                const selection:ScanSurfacePick={position:{x:point.x,y:point.y,z:point.z},sourceMeshPath:path};
+                setTimeout(()=>onScanSurfacePick(selection),0);
+                return;
+              }
               setTimeout(()=>useDigitalTwinStore.getState().selectMesh(path, ''),0);
             }}
             castShadow
             receiveShadow
           />
+        ))}
+        {scanMode && scanHotspots.map(marker=>(
+          <Html key={marker.id}
+            position={[marker.position.x,marker.position.y,marker.position.z]}
+            center distanceFactor={15} style={{pointerEvents:'auto'}}>
+            <button type="button" aria-label={`Inspect scan hotspot: ${marker.label}`}
+              className={`max-w-44 truncate rounded-full border px-2 py-1.5 text-[11px] font-semibold shadow-lg cursor-pointer ${marker.isApproved
+                ? 'border-emerald-300 bg-emerald-950/95 text-emerald-100'
+                : 'border-amber-300 bg-amber-950/95 text-amber-100'}`}
+              onClick={event=>{event.stopPropagation();setTimeout(()=>onScanHotspotSelect?.(marker.componentId),0);}}>
+              {marker.isApproved?'●':'○'} {marker.label}
+            </button>
+          </Html>
         ))}
       </group>
 
@@ -667,6 +707,10 @@ export function ModelLoader({
   bindings: externalBindings,
   onMeshCount,
   onAnatomyManifest,
+  scanMode=false,
+  scanHotspots,
+  onScanSurfacePick,
+  onScanHotspotSelect,
   children,
 }: ModelLoaderProps) {
   const [localError, setLocalError] = useState<string | null>(null);
@@ -753,6 +797,10 @@ export function ModelLoader({
         bindings={bindings}
         onMeshCount={onMeshCount}
         onAnatomyManifest={onAnatomyManifest}
+        scanMode={scanMode}
+        scanHotspots={scanHotspots}
+        onScanSurfacePick={onScanSurfacePick}
+        onScanHotspotSelect={onScanHotspotSelect}
         maxDimension={maxDimension}
         autoCenter={autoCenter}
         autoScale={autoScale}

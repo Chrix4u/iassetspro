@@ -7,6 +7,7 @@ import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { inspectSelfContainedGlb, MAX_PRIVATE_CAD_UPLOAD_BYTES } from '@/lib/smart-anatomy/validate-glb';
 import { validateOfflineCadEvidence } from '@/lib/smart-anatomy/offline-cad-evidence';
 import { validateOemSourceIdentity } from '@/lib/smart-anatomy/oem-identity';
+import { validateSiteScanCapture } from '@/lib/smart-anatomy/site-scan';
 import { assertPrivateCadStorageReady, privateCadFilePath, privateCadStorageRoot } from '@/lib/smart-anatomy/private-cad-storage';
 import { MultipartUploadError, MAX_CAD_MULTIPART_OVERHEAD, readBoundedMultipart } from '@/lib/smart-anatomy/limited-multipart';
 
@@ -67,6 +68,21 @@ export async function POST(req: NextRequest) {
     const oemModel = String(form.get('oemModel') || '').trim();
     const drawingRevision = String(form.get('drawingRevision') || '').trim();
     const nameplateSerial = String(form.get('nameplateSerial') || '').trim();
+    let scanCapture: ReturnType<typeof validateSiteScanCapture> | null = null;
+    if (sourceOrigin === 'site-owned-scan') {
+      try {
+        scanCapture = validateSiteScanCapture({
+          method:form.get('captureMethod'), capturedAt:form.get('capturedAt'),
+          device:form.get('captureDevice'),sourceUnit:form.get('sourceUnit'),
+          metreScaleReference:form.get('metreScaleReference'),
+          metresConfirmed:form.get('metresConfirmed') === 'true',
+          visibleSurfacesOnly:form.get('visibleSurfacesOnly') === 'true',
+        });
+      } catch(error) {
+        return NextResponse.json({success:false,
+          error:error instanceof Error?error.message:'Invalid scan evidence'},{status:400});
+      }
+    }
 
     if (!file || typeof file === 'string' || !file.name.toLowerCase().endsWith('.glb') ||
         !Number.isSafeInteger(file.size) || file.size <= 0 || file.size > MAX_PRIVATE_CAD_UPLOAD_BYTES) {
@@ -164,6 +180,8 @@ export async function POST(req: NextRequest) {
                 sourceNameplateMatchAttested: false,
               } : null,
               conversionEvidence,
+              scanCapture,
+              sourceGeometryKind: scanCapture ? 'as-built-exterior-surfaces' : 'engineering-cad',
               status: 'awaiting-engineer-commissioning',
               ...geometry,
             }),
@@ -198,4 +216,67 @@ export async function POST(req: NextRequest) {
     console.error('[POST /api/smart-anatomy/models]', error);
     return NextResponse.json({ success: false, error: 'Could not save the CAD model' }, { status: 500 });
   }
+}
+
+
+/** Restricted source-aware model catalogue for OEM CAD and as-built site scans.
+ * Ordinary plant viewers can enumerate only independently commissioned models.
+ */
+export async function GET(req: NextRequest) {
+  const session = getSession(req);
+  if (!session) return NextResponse.json({success:false,error:'Not authenticated'},{status:401});
+  const manager = isAdmin(session) || hasPermission(session,'digital_twin.manage');
+  if (!manager && !hasPermission(session,'digital_twin.view')) {
+    return NextResponse.json({success:false,error:'Insufficient permissions'},{status:403});
+  }
+  const scope=await getPlantScope(req,session);
+  if(scope.denyAccess) return NextResponse.json({success:false,error:'Access denied'},{status:403});
+  const assetId=req.nextUrl.searchParams.get('assetId') || '';
+  if(!assetId || assetId.length>100) return NextResponse.json({success:false,error:'A machine asset is required'},{status:400});
+  const originFilter=req.nextUrl.searchParams.get('sourceOrigin');
+  if(originFilter && !['licensed-oem','site-owned-scan','site-owned-design','original-training'].includes(originFilter)) {
+    return NextResponse.json({success:false,error:'Invalid source category'},{status:400});
+  }
+  const asset=await db.asset.findUnique({where:{id:assetId},select:{plantId:true}});
+  if(!asset || !canAccessPlantStrict(scope,asset.plantId)) {
+    return NextResponse.json({success:false,error:'Machine not found in authorized plant'},{status:404});
+  }
+  const models=await db.assetModel.findMany({
+    where:{
+      assetId,
+      filePath:{startsWith:'/api/smart-anatomy/models/'},
+      ...(manager?{}:{isActive:true}),
+    },
+    select:{id:true,name:true,fileName:true,filePath:true,fileSize:true,isActive:true,
+      meshCount:true,createdAt:true,uploadedById:true},
+    orderBy:{createdAt:'desc'},
+    take:100,
+  });
+  const sourceAudits=models.length ? await db.auditLog.findMany({
+    where:{entityType:'asset_model',action:'create',entityId:{in:models.map(m=>m.id)}},
+    select:{entityId:true,newValues:true},orderBy:{createdAt:'asc'},
+  }) : [];
+  const firstOrigin=new Map<string, {sourceOrigin:string;scanCapture:unknown}>();
+  for(const audit of sourceAudits){
+    if(firstOrigin.has(audit.entityId))continue;
+    try{
+      const info=JSON.parse(audit.newValues||'{}') as {
+        sourceOrigin?:unknown;scanCapture?:unknown;
+      };
+      if(typeof info.sourceOrigin==='string' &&
+         ['licensed-oem','site-owned-scan','site-owned-design','original-training'].includes(info.sourceOrigin)) {
+        firstOrigin.set(audit.entityId,{sourceOrigin:info.sourceOrigin,scanCapture:info.scanCapture});
+      }
+    }catch{/* Invalid provenance is not an approved source. */}
+  }
+  const data=models.flatMap(model=>{
+    const provenance=firstOrigin.get(model.id);
+    if(!provenance || (originFilter && provenance.sourceOrigin!==originFilter))return [];
+    return [{
+      ...model, sourceOrigin:provenance.sourceOrigin,
+      // Capture device and physical source notes stay manager-only.
+      ...(manager?{scanCapture:provenance.scanCapture || null}:{}),
+    }];
+  });
+  return NextResponse.json({success:true,data},{headers:{'Cache-Control':'private, no-store'}});
 }

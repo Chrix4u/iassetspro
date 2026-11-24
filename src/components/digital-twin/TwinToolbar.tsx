@@ -70,6 +70,8 @@ export interface TwinToolbarProps {
   isTreeOpen?: boolean;
   /** Exact number of actual meshes in the imported model; single-mesh files cannot explode. */
   anatomyGroupCount?: number;
+  /** Surface scans may not explode their captured exterior into OEM parts. */
+  allowExplosion?:boolean;
   isIllustrativeDemo?: boolean;
 }
 
@@ -316,6 +318,7 @@ export function TwinToolbar({
   onViewModeChange,
   isTreeOpen = false,
   anatomyGroupCount,
+  allowExplosion=true,
   isIllustrativeDemo = false,
 }: TwinToolbarProps) {
   const explodeMode = useDigitalTwinStore(s => s.explodeMode);
@@ -400,7 +403,7 @@ export function TwinToolbar({
         <ToolbarDivider />
 
         {/* ── Analysis Tools ────────────────────────────────────────────── */}
-        <ExplodeSliderPopup groupCount={anatomyGroupCount} />
+        {allowExplosion && <ExplodeSliderPopup groupCount={anatomyGroupCount} />}
         <SectionPlanePopup />
         <ToolbarButton
           icon={<Eye className="h-4 w-4" />}

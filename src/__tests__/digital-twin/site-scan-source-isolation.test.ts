@@ -22,9 +22,9 @@ describe('site scan versus OEM engineering CAD source isolation',()=>{
   it('disables explosion and live IoT claims for visual-only site scans',()=>{
     const viewer=file('components/digital-twin/DigitalTwinViewer.tsx');
     const toolbar=file('components/digital-twin/TwinToolbar.tsx');
-    expect(viewer).toContain('!scanMode && <ExplodedView');
-    expect(viewer).toContain('!isIllustrativeDemo && !scanMode && <IoTOverlayLayer');
-    expect(viewer).toContain('allowExplosion={!scanMode}');
+    expect(viewer).toContain('!scanMode && !onScanSurfacePick && <ExplodedView');
+    expect(viewer).toContain('!isIllustrativeDemo && !scanMode && !onScanSurfacePick && <IoTOverlayLayer');
+    expect(viewer).toContain('allowExplosion={!scanMode && !onScanSurfacePick}');
     expect(toolbar).toContain('allowExplosion && <ExplodeSliderPopup');
   });
   it('uses approved real machine component links rather than invented scan mesh BOM',()=>{

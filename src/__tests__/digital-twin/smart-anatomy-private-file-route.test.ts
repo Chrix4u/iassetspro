@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, unlink, symlink, truncate } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
@@ -65,6 +65,7 @@ beforeEach(() => {
   mocked.canAccessPlantStrict.mockImplementation((_scope: unknown, plantId: string) => plantId === 'plant-a');
   mocked.findUnique.mockResolvedValue({
     id, filePath, fileSize: fixture.length,
+    isActive: true, uploadedById: 'uploader-1',
     asset: { plantId: 'plant-a' },
   });
   mocked.auditFindFirst.mockResolvedValue({
@@ -88,6 +89,31 @@ describe('private CAD binary access, end-to-end route behavior with mocked ident
     const response = await GET(req(), params);
     expect(response.status).toBe(403);
     expect(mocked.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('never reveals an unapproved OEM CAD file to ordinary plant viewers', async () => {
+    mocked.findUnique.mockResolvedValue({
+      id, filePath, fileSize: fixture.length, isActive: false,
+      uploadedById: 'uploader-1', asset: { plantId: 'plant-a' },
+    });
+    mocked.hasPermission.mockImplementation((_session: unknown, permission: string) =>
+      permission === 'digital_twin.view');
+    const response = await GET(req(), params);
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toContain('engineering approval');
+    expect(mocked.auditFindFirst).not.toHaveBeenCalled();
+  });
+
+  it('allows restricted pre-approval geometry inspection to the managing plant engineer', async () => {
+    mocked.findUnique.mockResolvedValue({
+      id, filePath, fileSize: fixture.length, isActive: false,
+      uploadedById: 'uploader-1', asset: { plantId: 'plant-a' },
+    });
+    mocked.hasPermission.mockImplementation((_session: unknown, permission: string) =>
+      permission === 'digital_twin.manage');
+    const response = await GET(req(), params);
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toContain('no-store');
   });
 
   it('does not disclose content across plants, even when the UUID is known', async () => {
@@ -136,6 +162,46 @@ describe('private CAD binary access, end-to-end route behavior with mocked ident
       expect((await response.json()).error).toContain('checksum');
     } finally {
       await writeFile(join(directory, id + '.glb'), fixture);
+    }
+  });
+
+  it('rejects private CAD symlink substitution without following its target bytes', async () => {
+    const original = join(directory, id + '.glb');
+    const substituted = join(directory, 'not-the-model.glb');
+    await writeFile(substituted, fixture);
+    await unlink(original);
+    await symlink(substituted, original);
+    try {
+      const response = await GET(req(), params);
+      expect(response.status).toBe(404);
+      expect(response.headers.get('content-type')).toContain('application/json');
+    } finally {
+      await unlink(original);
+      await writeFile(original, fixture, { mode: 0o600 });
+      await unlink(substituted);
+    }
+  });
+
+  it('rejects an oversized sparse CAD file before reading it into memory', async () => {
+    const original = join(directory, id + '.glb');
+    const altered = join(directory, 'sparse-disallowed.glb');
+    await writeFile(altered, Buffer.alloc(0), { mode: 0o600 });
+    await truncate(altered, 25 * 1024 * 1024 + 1);
+    await unlink(original);
+    await symlink(altered, original);
+    try {
+      // Even when a mistaken database record claims the giant file size,
+      // it must never enter the authenticated response or be buffered.
+      mocked.findUnique.mockResolvedValue({
+        id, filePath, fileSize: 25 * 1024 * 1024 + 1,
+        isActive: true, asset: { plantId: 'plant-a' },
+      });
+      const response = await GET(req(), params);
+      expect([404, 409]).toContain(response.status);
+    } finally {
+      await unlink(original);
+      await writeFile(original, fixture, { mode: 0o600 });
+      await unlink(altered);
     }
   });
 

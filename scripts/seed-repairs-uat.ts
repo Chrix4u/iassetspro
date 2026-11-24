@@ -108,6 +108,8 @@ const UAT_USERS: UatUserDef[] = [
   { username: 'uat_inventory_manager', fullName: 'UAT Inventory Manager', email: 'uat_inventory_manager@test.com', roleSlugs: ['inventory_manager'], plantCodes: ['PLANT-A', 'PLANT-B'], isPrimaryPlant: 'PLANT-A' },
   { username: 'uat_tools_shop_attendant', fullName: 'UAT Tools Shop Attendant', email: 'uat_tools_shop_attendant@test.com', roleSlugs: ['tools_shop_attendant'], plantCodes: ['PLANT-A', 'PLANT-B'], isPrimaryPlant: 'PLANT-A' },
   { username: 'uat_production_manager', fullName: 'UAT Production Manager', email: 'uat_production_manager@test.com', roleSlugs: ['production_manager'], plantCodes: ['PLANT-A'], isPrimaryPlant: 'PLANT-A' },
+  { username: 'uat_reliability_a', fullName: 'UAT Reliability Engineer A', email: 'uat_reliability_a@test.com', roleSlugs: ['reliability_engineer'], plantCodes: ['PLANT-A'], isPrimaryPlant: 'PLANT-A' },
+  { username: 'uat_reliability_b', fullName: 'UAT Reliability Engineer B', email: 'uat_reliability_b@test.com', roleSlugs: ['reliability_engineer'], plantCodes: ['PLANT-A'], isPrimaryPlant: 'PLANT-A' },
   { username: 'uat_plant_a_user', fullName: 'UAT Plant A User', email: 'uat_plant_a_user@test.com', roleSlugs: ['maintenance_technician'], plantCodes: ['PLANT-A'], isPrimaryPlant: 'PLANT-A', primaryTrade: 'Mechanical' },
   { username: 'uat_plant_b_user', fullName: 'UAT Plant B User', email: 'uat_plant_b_user@test.com', roleSlugs: ['maintenance_technician'], plantCodes: ['PLANT-B'], isPrimaryPlant: 'PLANT-B', primaryTrade: 'Mechanical' },
   { username: 'uat_supervisor_plant_a', fullName: 'UAT Supervisor Plant A Only', email: 'uat_supervisor_plant_a@test.com', roleSlugs: ['maintenance_supervisor'], plantCodes: ['PLANT-A'], isPrimaryPlant: 'PLANT-A' },

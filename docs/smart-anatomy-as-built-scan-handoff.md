@@ -46,6 +46,20 @@ Neither a texture nor a glTF mesh name makes a source legally authorized or phys
 - Offsite encrypted **backup plus a tested restore** must be provisioned for proprietary CAD/scans before production certification. Local-only encrypted backup does not satisfy disaster recovery.
 - Exact installed machine and field engineer acceptance testing require an actual owner-authorized scan. Public test CAD or illustrative boxes do not certify customer-machine fidelity.
 - Native manufacturer assembly formats or hosted Matterport/Autodesk/HOOPS services remain **optional adapters**, not required third-party subscriptions.
+## Engineering roles and maker-checker release
+
+The `Reliability Engineer` role has `digital_twin.view` and `digital_twin.manage`, allowing authorized engineers to import private source geometry, identify genuine component hotspots and independently review geometry. The existing maintenance manager, planner, supervisor and technician roles receive only `digital_twin.view`, `model_viewer.view` and `hotspots.view` for approved, plant-scoped content. They do **not** receive private-CAD upload/approval rights simply by holding a maintenance role.
+
+Before production rollout, use the dry-run targeted provisioner:
+
+```bash
+bunx tsx scripts/smart-anatomy/provision-reliability-role.ts
+```
+
+After a database backup, the release operator can explicitly invoke the same provisioner with `--apply` and the authorized `DATABASE_URL`. This idempotently creates only role/permission records; it does **not** create passwords, default users, plant memberships or demonstration data. The administrator must assign **two distinct, named, plant-authorized engineers** in Team & Access. The scan uploader/marker author or CAD uploader cannot approve their own evidence. Engineering model approval and CAD-to-scan registration approval are independently audited.
+
+The disposable CI Repairs UAT creates its own synthetic engineer accounts and owner-only temporary CAD root, verifies the private-file and maker-checker workflow, and runs mobile browser checks. These fixtures are deliberately labelled **synthetic** and are never actual manufacturer CAD or customer plant evidence.
+
 ## Approved OEM CAD ↔ as-built scan registration
 
 Once an independently reviewed site scan and separately commissioned OEM/site-owned engineering CAD both exist for **the same registered installed machine**:

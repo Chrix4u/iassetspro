@@ -352,6 +352,22 @@ jobs:
       - name: Generate Prisma client
         run: bunx prisma generate
 
+      # Proprietary CAD and scans require owner-only non-webroot storage.
+      # This CI directory is ephemeral, has no external network mount, and
+      # must never be confused with customer CAD evidence or an offsite backup.
+      - name: Provision private CAD storage for isolated Repairs UAT
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/iassetspro-private-cad-uat"
+          mkdir -p "$root"
+          chmod 0700 "$root"
+          echo "IASSETSPRO_CAD_STORAGE_ROOT=$root" >> "$GITHUB_ENV"
+          stat -c '%a %U' "$root"
+
+      - name: Verify owner-only CAD storage in isolated Repairs UAT
+        run: node scripts/smart-anatomy/check-private-cad-storage.mjs
+
       - name: Apply PostgreSQL baseline migration to isolated UAT database
         run: |
           bunx prisma migrate deploy

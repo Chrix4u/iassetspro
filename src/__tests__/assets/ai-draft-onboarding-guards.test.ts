@@ -31,7 +31,7 @@ describe('AI draft asset commissioning safety guards', () => {
   });
 
   it('does not automatically activate PM work order generation from AI guesses', () => {
-    const scheduleStart = route.indexOf('await db.pmSchedule.create({');
+    const scheduleStart = route.indexOf('await tx.pmSchedule.create({');
     expect(scheduleStart).toBeGreaterThan(-1);
     const schedule = route.slice(scheduleStart, route.indexOf('summary.pmSchedules++', scheduleStart));
     expect(schedule).toContain("frequencyType: 'time_day'");
@@ -42,7 +42,7 @@ describe('AI draft asset commissioning safety guards', () => {
   });
 
   it('quarantines speculative AI spare parts from active inventory and costs', () => {
-    const start = route.indexOf('await db.inventoryItem.createMany({');
+    const start = route.indexOf('await tx.inventoryItem.createMany({');
     expect(start).toBeGreaterThan(-1);
     const inventory = route.slice(start, route.indexOf('summary.inventoryItems =', start));
     expect(inventory).toContain('isActive: false');
@@ -78,6 +78,47 @@ describe('AI draft asset commissioning safety guards', () => {
     expect(twin).toContain('healthScore: 0');
     expect(twin).toContain('isActive: false');
     expect(route).toContain('NOT OEM CAD');
+  });
+
+  it('commits or rolls back the entire machine, BOM, inventory and PM proposal with its audit', () => {
+    const start=route.indexOf('const mainAsset = await db.$transaction(async tx => {');
+    const finish=route.indexOf('// 7. CREATE DIGITAL TWIN',start);
+    expect(start).toBeGreaterThan(-1);
+    expect(finish).toBeGreaterThan(start);
+    const registration=route.slice(start,finish);
+    for(const statement of [
+      'await tx.asset.create({',
+      'await tx.billOfMaterial.createMany({',
+      'await tx.componentRegistry.createMany({',
+      'await tx.inventoryItem.createMany({',
+      'await tx.pmTemplate.create({',
+      'await tx.pmTemplateTask.create({',
+      'await tx.pmSchedule.create({',
+      'await tx.auditLog.create({',
+      'return mainAsset;',
+    ]) expect(registration).toContain(statement);
+    expect(registration).not.toContain('await db.');
+    expect(registration).toContain('skipDuplicates: false');
+    expect(registration).toContain('timeout: 90000');
+    expect(route).toContain('verificationStatus: \'unverified_draft\'');
+  });
+
+  it('never fabricates running status, machine telemetry or a fake factory photo',()=>{
+    const start=route.indexOf('// 8. CREATE ENHANCED SYSTEM DIAGRAM');
+    const finish=route.indexOf('// DONE — Return response',start);
+    expect(start).toBeGreaterThan(-1);
+    const diagram=route.slice(start,finish);
+    expect(diagram).toContain('UNVERIFIED ILLUSTRATIVE SYSTEM DIAGRAM');
+    expect(diagram).toContain("status: 'unverified'");
+    expect(diagram).toContain('nodeData.rpm = null');
+    expect(diagram).toContain('nodeData.powerRating = null');
+    expect(diagram).not.toContain("status: 'operational'");
+    expect(diagram).not.toContain('nodeData.health = 100;');
+    expect(diagram).not.toContain('nodeData.rpm = 1500;');
+    expect(route).not.toContain('aiImageGeneration');
+    expect(route).not.toContain('generateMachineImage(');
+    expect(route).not.toContain('data: { imageUrl: generatedImageUrl }');
+    expect(route).toContain('imageUrl: mainAsset.imageUrl');
   });
 
   it('makes actual plant path and explicit concept approval mandatory in the generator modal', () => {

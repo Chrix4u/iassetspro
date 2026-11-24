@@ -37,12 +37,28 @@ describe('read-only Smart Anatomy staging gate',()=>{
     expect(output.log).toHaveBeenCalledWith(expect.stringContaining('Read-only smoke checks passed'));
   });
 
+  it('accepts real consumed JSON streams and the canonical app authentication proxy denial',async()=>{
+    const fetcher=vi.fn().mockImplementation(async(url:string)=>{
+      const health=url.endsWith('/api/health');
+      const response=new Response(JSON.stringify(health
+        ? {status:'healthy',checks:{database:{status:'healthy'}},uptime:15}
+        : {success:false,error:'Authentication required'}),{
+        status:health?200:401,headers:{'content-type':'application/json'},
+      });
+      Object.defineProperty(response,'url',{value:url});
+      return response;
+    });
+    await expect(runStagingReadiness({origin:'http://127.0.0.1:36471',fetcher,output:{log:vi.fn()} as unknown as Console})).resolves.toBeUndefined();
+  });
+
   it('rejects proxy or SSO 401 responses that are not the application denial JSON',async()=>{
     const origin='https://uat.lightworldtech.com';
     const output={log:vi.fn()} as unknown as Console;
     for(const [contentType,denial] of [
       ['text/html',{error:'Not authenticated'}],
       ['application/json',{error:'Unauthorized'}],
+      ['application/json',{error:'Authentication required'}],
+      ['application/json',{success:true,error:'Authentication required'}],
       ['application/json',{}],
     ] as const){
       const fetcher=vi.fn().mockImplementation(async(url:string)=>({

@@ -1074,7 +1074,6 @@ export async function POST(request: NextRequest) {
             verified: false,
             provenance: 'ai_suggestion',
             health: null,
-            verified: false,
             parameters: [
               { name: 'Components', value: String(subsystem.components?.length || 0), unit: '' },
             ],

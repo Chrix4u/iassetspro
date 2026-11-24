@@ -1010,7 +1010,7 @@ export async function POST(request: NextRequest) {
               { name: 'Subsystems', value: String(machineData.subsystems.length), unit: '' },
               { name: 'Components', value: String(summary.components), unit: '' },
               { name: 'PM Templates', value: String(machineData.pmTemplates.length), unit: '' },
-              { name: 'Spare Parts', value: String(inventoryItemsToCreate.length), unit: '' },
+              { name: 'Spare Parts', value: String(summary.inventoryItems), unit: '' },
             ],
           },
         },

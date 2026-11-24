@@ -8,16 +8,20 @@ const generatedRoute = fs.readFileSync('src/app/api/generated-assets/[...path]/r
 const deploy = fs.readFileSync('scripts/deploy-production-artifact-core.sh', 'utf8');
 
 describe('generated asset persistence contract', () => {
-  it('writes generated machine and component images into persistent storage', () => {
+  it('persists optional standalone conceptual visuals without fabricating an actual machine photograph', () => {
     expect(machineGenerator).toContain('process.env.GENERATED_ASSETS_DIR');
-    expect(assetGenerator).toContain('process.env.GENERATED_ASSETS_DIR');
+    expect(assetGenerator).not.toContain('process.env.GENERATED_ASSETS_DIR');
+    expect(assetGenerator).not.toContain('aiImageGeneration');
+    expect(assetGenerator).not.toContain('generateMachineImage(');
     expect(componentGenerator).toContain('process.env.GENERATED_ASSETS_DIR');
   });
 
   it('serves newly generated images through the generated-assets API', () => {
     expect(machineGenerator).toContain("'/api/generated-assets/component-visuals/'");
     expect(componentGenerator).toContain("'/api/generated-assets/component-visuals/'");
-    expect(assetGenerator).toContain('`/api/generated-assets/${filename}`');
+    expect(assetGenerator).not.toContain('generatedImageUrl');
+    expect(assetGenerator).not.toContain('imageUrl: generatedImageUrl');
+    expect(assetGenerator).toContain('imageUrl: mainAsset.imageUrl');
     expect(generatedRoute).toContain("'.svg': 'image/svg+xml'");
   });
 

@@ -9,6 +9,7 @@ describe('site scan versus OEM engineering CAD source isolation',()=>{
     expect(catalog).toContain('...(manager?{}:{isActive:true})');
     expect(catalog).toContain('canAccessPlantStrict(scope,asset.plantId)');
     expect(catalog).toContain("sourceOrigin:provenance.sourceOrigin");
+    expect(catalog).toContain("sourceOrigin === 'original-training' ? 'illustrative-training-geometry'");
     expect(legacy).toContain('...(manager ? {} : { isActive: true })');
   });
   it('never offers site-scan exterior geometry as source-backed OEM exploded CAD',()=>{

@@ -60,6 +60,14 @@ export function SiteScanAlignmentPanel({
   const [overlayOpacity,setOverlayOpacity]=useState(0.42);
 
   useEffect(()=>{
+    if(!scanModel.isActive){
+      // Unapproved scans have no approved CAD registration to load. Avoid
+      // triggering an expected 404 toast while engineering is still mapping.
+      setFetching(false);
+      setRecord(null);
+      onMeasurementModeChange(false);
+      return;
+    }
     let active=true;
     setFetching(true);
     setRecord(null);

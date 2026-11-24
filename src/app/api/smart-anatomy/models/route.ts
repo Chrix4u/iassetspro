@@ -181,7 +181,8 @@ export async function POST(req: NextRequest) {
               } : null,
               conversionEvidence,
               scanCapture,
-              sourceGeometryKind: scanCapture ? 'as-built-exterior-surfaces' : 'engineering-cad',
+              sourceGeometryKind: scanCapture ? 'as-built-exterior-surfaces' :
+                sourceOrigin === 'original-training' ? 'illustrative-training-geometry' : 'engineering-cad',
               status: 'awaiting-engineer-commissioning',
               ...geometry,
             }),

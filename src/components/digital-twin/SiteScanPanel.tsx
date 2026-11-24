@@ -220,7 +220,7 @@ export function SiteScanPanel({assetId,components,canManage,onComponentSelect}:{
         </SelectContent>
       </Select>
       {selected?.scanCapture&&<p className="text-xs text-muted-foreground">
-        Captured {selected.scanCapture.capturedAt} · {selected.scanCapture.method} ·
+        Captured {selected.scanCapture.capturedAt.split('-').reverse().join('-')} · {selected.scanCapture.method} ·
         {selected.scanCapture.device} · uploaded GLB in metres
       </p>}
     </div>

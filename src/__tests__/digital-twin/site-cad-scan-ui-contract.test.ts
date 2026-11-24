@@ -48,6 +48,9 @@ describe('registered scan and CAD view use the same source geometry coordinate f
     expect(loader).toContain('if(onScanSurfacePick && groupRef.current)');
     expect(panel).toContain('approvedCadOverlay={placing||picked?null:approvedCadOverlay}');
     expect(panel).toContain('<SiteScanAlignmentPanel');
+    // Ghanaian equipment records display dates as dd-mm-yyyy, even though
+    // capture provenance stays ISO-8601 internally.
+    expect(panel).toContain("selected.scanCapture.capturedAt.split('-').reverse().join('-')");
   });
   it('prevents CAD explosion and virtual IoT claims while recording measured points',async()=>{
     const {readFileSync}=await import('node:fs');

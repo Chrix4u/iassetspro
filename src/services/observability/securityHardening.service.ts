@@ -104,6 +104,7 @@ export interface PenTestRecord {
   tester?: string;
   findings: SecurityFinding[];
   riskScore?: number;         // 0-100
+  notes?: string;            // reviewer-provided assessment and follow-up
   createdAt: string;
   updatedAt: string;
 }

@@ -117,7 +117,14 @@ export function convertCadImportToGlb(data: CadImport, coordinateScale = 1): Cad
         node.mesh = meshId;
       } else {
         const meshNode = nodes.length;
-        nodes.push({name: name + ' · CAD surface ' + String(j + 1).padStart(2, '0'), mesh: meshId});
+        // Mark tessellated surfaces as belonging to one genuine source CAD
+        // product/part. The viewer explodes that physical part as a unit;
+        // individual surfaces remain selectable for exact source mapping.
+        nodes.push({
+          name: name + ' · CAD surface ' + String(j + 1).padStart(2, '0'),
+          mesh: meshId,
+          extras: {iAssetsCadSurface: true, iAssetsCadParentNode: id},
+        });
         children.push(meshNode);
       }
     }

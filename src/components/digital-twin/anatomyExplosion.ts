@@ -3,10 +3,12 @@ import type { AssetMeshBinding } from './InteractiveMesh';
 import { matchImportedMeshBinding } from './anatomyBindings';
 
 /**
- * Geometry-backed motion plan.  Exploding a model translates meshes already
- * present in its imported scene; it NEVER creates imaginary machine parts.
- * World-space directions are converted to the mesh's parent-local coordinates,
- * so assembly transforms and non-uniform scaling remain intact.
+ * Geometry-backed motion plan. Exploding a model translates only imported CAD
+ * surfaces; it never creates or infers imaginary OEM pieces.
+ *
+ * An OpenCascade part may tessellate into several meshes. The converter labels
+ * these meshes with iAssetsCadSurface=true; they are a SINGLE physical CAD
+ * part for explosion, despite remaining individually selectable for mapping.
  */
 export interface AnatomyExplosionPart {
   id: string;
@@ -30,46 +32,99 @@ export function buildAnatomyExplosion(
       meshes.push(mesh);
     }
   });
-
-  // A welded single-mesh file is not an exploded CAD assembly.
   if (meshes.length < 2) return [];
 
-  const boxes = meshes.map(mesh => new THREE.Box3().setFromObject(mesh));
-  const assembledBounds = boxes.reduce((all, box) => all.union(box), new THREE.Box3());
+  // Group ONLY explicit converter-generated face/surface siblings. A generic
+  // glTF parent group can contain several independent physical parts, so
+  // grouping by hierarchy alone would destroy the assembled BOM semantics.
+  const groups = new Map<string, THREE.Mesh[]>();
+  for (const mesh of meshes) {
+    const sourcePath = mesh.userData.__iAssetsSourceNodePath;
+    const sourceParent = typeof sourcePath === 'string' && sourcePath.includes('/')
+      ? sourcePath.slice(0, sourcePath.lastIndexOf('/')) : null;
+    // Rendered interactive clones are flattened into a scene wrapper; their
+    // source paths survive even when their physical parents no longer do.
+    const key = mesh.userData.iAssetsCadSurface === true
+      ? (sourceParent
+          ? 'original-part:' + sourceParent
+          : 'original-parent-uuid:' + (mesh.parent?.uuid || mesh.uuid))
+      : 'independent-mesh:' + mesh.uuid;
+    const existing = groups.get(key) || [];
+    existing.push(mesh);
+    groups.set(key, existing);
+  }
+
+  // Several surfaces of one real part do not constitute a disassemblable
+  // assembly. Refuse to portray that as an exploded BOM.
+  if (groups.size < 2) return [];
+  const groupsList = [...groups.values()];
+  const bounds = groupsList.map(members => {
+    const box = new THREE.Box3();
+    for (const mesh of members) box.union(new THREE.Box3().setFromObject(mesh));
+    return box;
+  });
+  const assembledBounds = bounds.reduce((all, box) => all.union(box), new THREE.Box3());
   if (assembledBounds.isEmpty()) return [];
+
   const assemblyCenter = assembledBounds.getCenter(new THREE.Vector3());
   const assemblyExtent = assembledBounds.getSize(new THREE.Vector3()).length();
   const spread = Math.max(assemblyExtent * 0.28, 0.01);
   const nameCount = new Map<string, number>();
   for (const mesh of meshes) nameCount.set(mesh.name, (nameCount.get(mesh.name) ?? 0) + 1);
 
-  return meshes.map((mesh, index) => {
-    const center = boxes[index].getCenter(new THREE.Vector3());
+  const offsets = new Map<THREE.Mesh, THREE.Vector3>();
+  for (const [groupIndex, members] of groupsList.entries()) {
+    const center = bounds[groupIndex].getCenter(new THREE.Vector3());
     const relative = center.clone().sub(assemblyCenter);
-    // Coaxial parts need different spread directions even if their centres coincide.
-    // This is a VIEW transform applied to real mesh geometry, not modelled geometry.
     if (relative.lengthSq() < 0.000001) {
-      const angle = index * Math.PI * (3 - Math.sqrt(5));
-      const y = 1 - (2 * (index + 0.5)) / meshes.length;
+      const angle = groupIndex * Math.PI * (3 - Math.sqrt(5));
+      const y = 1 - (2 * (groupIndex + 0.5)) / groupsList.length;
       relative.set(Math.cos(angle) * Math.sqrt(1 - y * y), y,
         Math.sin(angle) * Math.sqrt(1 - y * y));
     }
-    relative.normalize();
+    relative.normalize().multiplyScalar(spread);
 
-    const sourcePath = String(mesh.userData.__iAssetsSourceNodePath || mesh.name);
-    const binding = matchImportedMeshBinding(
-      mesh.name, sourcePath, (nameCount.get(mesh.name) ?? 0) > 1, bindings);
-    let localOffset: THREE.Vector3;
-    if (binding?.explodeOffset?.every(Number.isFinite)) {
-      // Explicit engineer-defined offset retains its existing parent-local meaning.
-      localOffset = new THREE.Vector3(...binding.explodeOffset);
-    } else {
-      const worldOffset = relative.multiplyScalar(spread);
-      const parentInverse = mesh.parent?.matrixWorld.clone().invert() ?? new THREE.Matrix4();
-      const origin = new THREE.Vector3().applyMatrix4(parentInverse);
-      localOffset = worldOffset.applyMatrix4(parentInverse).sub(origin);
+    // Explicit offsets for one physical part must agree, even if separate
+    // source surfaces were mapped by different reviewers. Never split a
+    // physical part when two conflicting offsets have been entered.
+    const explicit: THREE.Vector3[] = [];
+    for (const mesh of members) {
+      const sourcePath = String(mesh.userData.__iAssetsSourceNodePath || mesh.name);
+      const binding = matchImportedMeshBinding(
+        mesh.name, sourcePath, (nameCount.get(mesh.name) ?? 0) > 1, bindings,
+      );
+      if (binding?.explodeOffset?.length === 3 &&
+        binding.explodeOffset.every(Number.isFinite)) {
+        explicit.push(new THREE.Vector3(...binding.explodeOffset));
+      }
+    }
+    if (explicit.some(value => value.distanceToSquared(explicit[0]) > 0.00000001)) {
+      return [];
     }
 
+    for (const mesh of members) {
+      let localOffset: THREE.Vector3;
+      if (explicit.length) {
+        // All converter-generated surfaces are direct siblings and their
+        // engineer-defined offsets share the same parent-local frame.
+        localOffset = explicit[0].clone();
+      } else {
+        // Convert a single physical part's common world translation into
+        // every surface's parent-local coordinates, retaining model scale.
+        const parentInverse = mesh.parent?.matrixWorld.clone().invert() ?? new THREE.Matrix4();
+        const origin = new THREE.Vector3().applyMatrix4(parentInverse);
+        localOffset = relative.clone().applyMatrix4(parentInverse).sub(origin);
+      }
+      if (!localOffset.toArray().every(Number.isFinite)) return [];
+      offsets.set(mesh, localOffset);
+    }
+  }
+
+  return meshes.map((mesh, index) => {
+    const sourcePath = String(mesh.userData.__iAssetsSourceNodePath || mesh.name);
+    const binding = matchImportedMeshBinding(
+      mesh.name, sourcePath, (nameCount.get(mesh.name) ?? 0) > 1, bindings,
+    );
     return {
       id: mesh.uuid,
       mesh,
@@ -77,7 +132,7 @@ export function buildAnatomyExplosion(
       componentId: binding?.componentId ?? null,
       assetId: binding?.assetId ?? null,
       original: mesh.position.clone(),
-      offset: localOffset,
+      offset: offsets.get(mesh)!.clone(),
     };
   });
 }

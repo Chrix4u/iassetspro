@@ -25,7 +25,7 @@ const assetId='machine-a';
 const payload=(hotspots:unknown,options:Record<string,unknown>={})=>({
   assetId,visualType:'photo',title:'Actual factory machine photograph',
   imageUrl:'https://example.com/site-real-machine.jpg',
-  sourceProvider:'uploaded',cameraData:{viewpoint:'front'},
+  sourceProvider:'customer_supplied',cameraData:{viewpoint:'front'},
   hotspotData:hotspots,...options,
 });
 const req=(data:unknown)=>new NextRequest('http://localhost/api/component-visuals',{
@@ -49,6 +49,21 @@ beforeEach(()=>{
 });
 
 describe('photo hotspot registration validates actual machine parts at first write',()=>{
+  it('does not let a JSON URL impersonate a protected factory upload',async()=>{
+    const response=await POST(req(payload([], {sourceProvider:'uploaded'})));
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toContain('protected factory photo upload');
+    expect(mocks.asset).not.toHaveBeenCalled();
+    expect(mocks.createVisual).not.toHaveBeenCalled();
+  });
+  it('saves external references without calling them protected uploads',async()=>{
+    const external=payload([], {sourceProvider:'external_reference'});
+    const response=await POST(req(external));
+    expect(response.status).toBe(201);
+    expect(mocks.createVisual).toHaveBeenCalledWith({data:expect.objectContaining({
+      sourceProvider:'external_reference',
+    })});
+  });
   it('does not attempt a DB lookup without a valid session',async()=>{
     mocks.getSession.mockReturnValue(null);
     const response=await POST(req(payload([{componentId:'part-a',x:0.5,y:0.5}])));

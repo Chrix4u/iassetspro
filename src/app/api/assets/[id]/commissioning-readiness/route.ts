@@ -54,7 +54,7 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
       db.assetMeter.findMany({where:{assetId:id,isActive:true},
         select:{meterType:true,unit:true,lastReadingAt:true},take:200}),
       db.componentVisual.findMany({where:{assetId:id,visualType:'photo',isActive:true},
-        select:{cameraData:true,sourceProvider:true},orderBy:{createdAt:'desc'},take:500}),
+        select:{cameraData:true,sourceProvider:true,imageUrl:true},orderBy:{createdAt:'desc'},take:500}),
       db.assetModel.findMany({where:{assetId:id,filePath:{startsWith:'/api/smart-anatomy/models/'}},
         select:{isActive:true},take:500}),
       db.pmScheduleTask.findMany({where:{assetId:id,isActive:true},
@@ -85,8 +85,10 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
         .includes(m.meterType.toLowerCase())).length,
       runtimeMeters:meters.filter(m=>m.meterType.toLowerCase()==='runtime'&&
         ['h','hr','hrs','hour','hours'].includes(m.unit.toLowerCase())).length,
-      actualPhotoViews:photos.filter(photo=>['uploaded','customer_supplied'].includes(
-        photo.sourceProvider||'')).map(photo=>machinePhotoViewpoint(photo.cameraData)),
+      actualPhotoViews:photos.filter(photo=>
+        photo.sourceProvider==='uploaded' &&
+        /^\/private-component-photos\/factory-photo-[0-9a-f-]{36}\.(?:png|jpg|webp)$/i.test(photo.imageUrl),
+      ).map(photo=>machinePhotoViewpoint(photo.cameraData)),
       privateCadApproved:models.filter(model=>model.isActive).length,
       privateCadPending:models.filter(model=>!model.isActive).length,
       // A successful GLB checksum check proves byte integrity, not that this

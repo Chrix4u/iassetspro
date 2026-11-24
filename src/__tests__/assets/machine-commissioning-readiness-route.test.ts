@@ -56,8 +56,14 @@ beforeEach(()=>{
     meterType:'production',unit:'tonne',lastReadingAt:null,
   }]);
   mocks.photos.mockResolvedValue([
-    {cameraData:JSON.stringify({viewpoint:'front'}),sourceProvider:'uploaded'},
-    {cameraData:JSON.stringify({viewpoint:'back'}),sourceProvider:'openai'},
+    {cameraData:JSON.stringify({viewpoint:'front'}),sourceProvider:'uploaded',
+      imageUrl:'/private-component-photos/factory-photo-f4f9438d-5e92-499a-9abf-b66d6ba591ca.jpg'},
+    {cameraData:JSON.stringify({viewpoint:'right'}),sourceProvider:'uploaded',
+      imageUrl:'https://example.com/forged-upload.jpg'},
+    {cameraData:JSON.stringify({viewpoint:'left'}),sourceProvider:'customer_supplied',
+      imageUrl:'https://example.com/customer-reference.jpg'},
+    {cameraData:JSON.stringify({viewpoint:'back'}),sourceProvider:'openai',
+      imageUrl:'https://example.com/generated.jpg'},
   ]);
   mocks.models.mockResolvedValue([{isActive:false},{isActive:true}]);
   mocks.pm.mockResolvedValue([{basis:'calendar',pmType:'tbm',pmTaskId:'task-1'},

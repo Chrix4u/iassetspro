@@ -112,7 +112,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const {
       assetId, componentId, visualType = 'photo', title, description, imageUrl,
-      thumbnailUrl, hotspotData, cameraData, sourceProvider = 'uploaded',
+      thumbnailUrl, hotspotData, cameraData, sourceProvider = 'external_reference',
       sourcePrompt, zoomLevel = 0, sortOrder = 0, isPrimary = false,
     } = body;
 
@@ -122,6 +122,17 @@ export async function POST(request: NextRequest) {
     if(visualType==='photo'&&!/^https:\/\//i.test(String(imageUrl||''))&&
       !String(imageUrl||'').startsWith('/api/files/')){
       return NextResponse.json({success:false,error:'Use an approved HTTPS photo URL or stored file URL'},{status:400});
+    }
+    // 'uploaded' is reserved for the dedicated multipart endpoint which
+    // validates real image bytes and writes the protected private file.
+    // Never let a JSON request label an arbitrary remote URL as uploaded.
+    if (visualType === 'photo' && (
+        sourceProvider === 'uploaded' ||
+        String(imageUrl||'').startsWith('/private-component-photos/')
+      )) {
+      return NextResponse.json({success:false,
+        error:'Use the protected factory photo upload endpoint for an uploaded source',
+      },{status:400});
     }
     if (visualType === 'photo' && cameraData != null &&
         !isMachinePhotoViewpoint((cameraData as {viewpoint?:unknown})?.viewpoint)) {

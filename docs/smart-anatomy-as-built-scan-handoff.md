@@ -45,4 +45,16 @@ Neither a texture nor a glTF mesh name makes a source legally authorized or phys
 - Offsite encrypted **backup plus a tested restore** must be provisioned for proprietary CAD/scans before production certification. Local-only encrypted backup does not satisfy disaster recovery.
 - Exact installed machine and field engineer acceptance testing require an actual owner-authorized scan. Public test CAD or illustrative boxes do not certify customer-machine fidelity.
 - Native manufacturer assembly formats or hosted Matterport/Autodesk/HOOPS services remain **optional adapters**, not required third-party subscriptions.
-- **OEM CAD-to-site-scan spatial alignment requires separately verified landmark correspondences and engineering review**; the current Real 3D Scan tab does not yet claim superimposition on OEM CAD.
+## Approved OEM CAD ↔ as-built scan registration
+
+Once an independently reviewed site scan and separately commissioned OEM/site-owned engineering CAD both exist for **the same registered installed machine**:
+
+1. Open the Real 3D Scan tab and expand **Source CAD ↔ Installed Machine Scan**.
+2. Select the exact approved engineering CAD model and manufacturer drawing revision.
+3. Pick matching, real physical features in the two 3D viewers (scan and CAD), naming and documenting **3 to 8 uniquely identifiable, noncollinear** physical reference points.
+4. The registered solution maps **CAD model-local metres to site scan model-local metres** by a rigid rotation and translation. The software **never scales or stretches** authentic manufacturer geometry to fake correspondence. It rejects incorrect sizes, large landmark residuals, nonfinite coordinates, duplicated features and mirrored geometry.
+5. Save a draft alignment. A different engineer independently checks the installed-machine identity, drawing revision, measured scan scale, landmark observations, geometry and residuals before accepting the registration. The scan uploader, CAD uploader and original alignment author cannot self-approve.
+6. Only a **separately approved** alignment may superimpose translucent source CAD over the as-built scan. An opacity slider enables visual comparison while the scan and CAD remain separate, unchanged source files. Neither this overlay nor its numerical residuals establish safe lifting clearances, internal part geometry, machining tolerances or work-order authorization.
+7. If either original model is withdrawn or superseded, the alignment is unavailable. A corrected scan must be reimported, mapped and independently reviewed rather than secretly changing a certified registration.
+
+The bounded alignment input is at most eight 3D landmark pairs. Registered 3D points and their source-model identities are stored in a dedicated audit-backed alignment table, not embedded into the asset's operational parameters. More advanced multi-scan fusion, native CAD vendor SDK adapters, large-cloud point streaming and fully automated registration remain separately scoped engineering extensions.

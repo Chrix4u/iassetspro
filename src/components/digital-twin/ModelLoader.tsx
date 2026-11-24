@@ -54,6 +54,10 @@ export interface ModelLoaderProps {
   scanHotspots?:ScanOverlayHotspot[];
   onScanSurfacePick?:(value:ScanSurfacePick)=>void;
   onScanHotspotSelect?:(componentId:string)=>void;
+  /** CAD registration geometry inherits the source scan's *same* model-local frame. */
+  modelLocalChildren?: ReactNode;
+  /** Optional translucent verified CAD overlay; never changes source geometry. */
+  displayOpacity?:number;
   /** Children rendered after the model */
   children?: ReactNode;
 }
@@ -454,6 +458,8 @@ function PerformanceMonitor({ enabled }: { enabled: boolean }) {
 // ============================================================================
 
 interface ProcessedModelProps {
+  modelLocalChildren?: ReactNode;
+  displayOpacity?: number;
   scanMode?:boolean;
   scanHotspots?:ScanOverlayHotspot[];
   onScanSurfacePick?:(value:ScanSurfacePick)=>void;
@@ -474,6 +480,8 @@ function ProcessedModel({
   scanHotspots=[],
   onScanSurfacePick,
   onScanHotspotSelect,
+  modelLocalChildren,
+  displayOpacity=1,
   onMeshCount,
   onAnatomyManifest,
   maxDimension,
@@ -504,6 +512,16 @@ function ProcessedModel({
       if (!(child as THREE.Mesh).isMesh) return;
       const originalMesh = child as THREE.Mesh;
       const mesh = cloneImportedAnatomyMesh(originalMesh, scene, sourcePaths.get(originalMesh), true);
+      if(displayOpacity < 1){
+        // Only cloned display materials are modified, never the cached CAD
+        // source or its underlying imported texture/geometry assets.
+        const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+        for(const material of materials){
+          material.transparent=true;
+          material.opacity*=Math.max(0.05,Math.min(1,displayOpacity));
+          material.depthWrite=false;
+        }
+      }
 
       // Engineer-approved source path takes precedence. A duplicated CAD name
       // is never an authoritative PM target unless its exact path is mapped.
@@ -519,7 +537,7 @@ function ProcessedModel({
     });
 
     return { interactiveMeshes: interactive, staticMeshes: staticList };
-  }, [scene, bindings]);
+  }, [scene, bindings, displayOpacity]);
 
   const anatomyManifest = useMemo<ImportedAnatomyMesh[]>(() => [
     ...interactiveMeshes.map(({mesh,binding})=>({
@@ -619,7 +637,7 @@ function ProcessedModel({
             onClick={event=>{
               event.stopPropagation();
               const path=String(mesh.userData.__iAssetsSourceNodePath || mesh.name);
-              if(scanMode && onScanSurfacePick && groupRef.current){
+              if(onScanSurfacePick && groupRef.current){
                 // Store model-local metres, not world/camera/scaled coordinates.
                 const point=groupRef.current.worldToLocal(event.point.clone());
                 const selection:ScanSurfacePick={position:{x:point.x,y:point.y,z:point.z},sourceMeshPath:path};
@@ -645,6 +663,7 @@ function ProcessedModel({
             </button>
           </Html>
         ))}
+        {modelLocalChildren}
       </group>
 
       {/* LOD Manager — headless component that toggles visibility */}
@@ -711,6 +730,8 @@ export function ModelLoader({
   scanHotspots,
   onScanSurfacePick,
   onScanHotspotSelect,
+  modelLocalChildren,
+  displayOpacity=1,
   children,
 }: ModelLoaderProps) {
   const [localError, setLocalError] = useState<string | null>(null);
@@ -801,6 +822,8 @@ export function ModelLoader({
         scanHotspots={scanHotspots}
         onScanSurfacePick={onScanSurfacePick}
         onScanHotspotSelect={onScanHotspotSelect}
+        modelLocalChildren={modelLocalChildren}
+        displayOpacity={displayOpacity}
         maxDimension={maxDimension}
         autoCenter={autoCenter}
         autoScale={autoScale}

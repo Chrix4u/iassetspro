@@ -52,7 +52,16 @@ import { Button } from '@/components/ui/button';
 // Types
 // ============================================================================
 
+export interface ApprovedCadScanOverlay {
+  cadModelUrl:string;
+  translation:{x:number;y:number;z:number};
+  rotation:[number,number,number,number];
+  opacity?:number;
+}
+
 export interface DigitalTwinViewerProps {
+  /** Independently approved CAD registration on the same installed asset. */
+  approvedCadOverlay?:ApprovedCadScanOverlay|null;
   /** As-built LiDAR/photogrammetry model; never inferred OEM internals. */
   scanMode?: boolean;
   scanHotspots?: ScanOverlayHotspot[];
@@ -358,6 +367,7 @@ export function DigitalTwinViewer({
   scanMode=false,
   scanHotspots=[],
   onScanSurfacePick,
+  approvedCadOverlay=null,
 }: DigitalTwinViewerProps) {
   // ── Store state ──────────────────────────────────────────────────────────
   const currentScene = useDigitalTwinStore((s) => s.currentScene);
@@ -795,21 +805,37 @@ export function DigitalTwinViewer({
                   scanHotspots={scanHotspots}
                   onScanSurfacePick={onScanSurfacePick}
                   onScanHotspotSelect={componentId=>onComponentSelect?.(componentId,'site-scan-hotspot')}
+                  modelLocalChildren={scanMode && approvedCadOverlay ? (
+                    <group
+                      position={[
+                        approvedCadOverlay.translation.x,
+                        approvedCadOverlay.translation.y,
+                        approvedCadOverlay.translation.z,
+                      ]}
+                      quaternion={approvedCadOverlay.rotation}>
+                      <ModelLoader
+                        modelUrl={approvedCadOverlay.cadModelUrl}
+                        bindings={EMPTY_ANATOMY_BINDINGS}
+                        autoScale={false} autoCenter={false}
+                        displayOpacity={approvedCadOverlay.opacity??0.42}
+                      />
+                    </group>
+                  ) : undefined}
                   onError={handleModelError}
                   onProgress={handleProgress}
                 />
               )}
 
               {/* Exploded view */}
-              {!scanMode && <ExplodedView bindings={effectiveBindings} />}
+              {!scanMode && !onScanSurfacePick && <ExplodedView bindings={effectiveBindings} />}
 
               {/* Section plane */}
               <SectionPlane />
 
               {/* Original illustrative demo files must not show previous asset telemetry. */}
-              {!isIllustrativeDemo && !scanMode && <IoTOverlayLayer />}
-              {!isIllustrativeDemo && !scanMode && <HotspotLayer />}
-              {!isIllustrativeDemo && !scanMode && <AnnotationLayer />}
+              {!isIllustrativeDemo && !scanMode && !onScanSurfacePick && <IoTOverlayLayer />}
+              {!isIllustrativeDemo && !scanMode && !onScanSurfacePick && <HotspotLayer />}
+              {!isIllustrativeDemo && !scanMode && !onScanSurfacePick && <AnnotationLayer />}
 
               {/* Background click handler (deselect) */}
               <BackgroundClickHandler />
@@ -882,7 +908,7 @@ export function DigitalTwinViewer({
           </div>
           {effectiveModelUrl && anatomyMeshCount > 0 && (
             <span className="text-[10px] text-slate-400" aria-live="polite">
-              {scanMode ? 'As-built exterior scan · ' + anatomyMeshCount.toLocaleString() + ' imported surfaces · no inferred internal parts' : anatomySourceGroupCount === 0
+              {scanMode ? (approvedCadOverlay ? 'As-built scan + verified CAD registration overlay · inspection only' : 'As-built exterior scan · ' + anatomyMeshCount.toLocaleString() + ' imported surfaces · no inferred internal parts') : anatomySourceGroupCount === 0
                 ? 'Inspecting imported geometry groups…'
                 : anatomySourceGroupCount === 1
                   ? anatomyMeshCount.toLocaleString() + ' mesh surfaces · one source geometry group; no explosion'
@@ -921,7 +947,7 @@ export function DigitalTwinViewer({
           onViewModeChange={handleViewModeChange}
           isTreeOpen={isTreeOpen}
           anatomyGroupCount={scanMode ? 0 : anatomySourceGroupCount}
-          allowExplosion={!scanMode}
+          allowExplosion={!scanMode && !onScanSurfacePick}
           isIllustrativeDemo={isIllustrativeDemo}
         />
       )}

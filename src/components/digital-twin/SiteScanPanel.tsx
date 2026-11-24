@@ -7,7 +7,8 @@ import {Button} from '@/components/ui/button';
 import {Input} from '@/components/ui/input';
 import {Label} from '@/components/ui/label';
 import {Select,SelectContent,SelectItem,SelectTrigger,SelectValue} from '@/components/ui/select';
-import {DigitalTwinViewer} from './DigitalTwinViewer';
+import {DigitalTwinViewer,type ApprovedCadScanOverlay} from './DigitalTwinViewer';
+import {SiteScanAlignmentPanel} from './SiteScanAlignmentPanel';
 import type {ScanOverlayHotspot,ScanSurfacePick} from './ModelLoader';
 
 interface ScanModel {
@@ -53,6 +54,8 @@ export function SiteScanPanel({assetId,components,canManage,onComponentSelect}:{
   const [physicalVerified,setPhysicalVerified]=useState(false);
   const [scaleReviewed,setScaleReviewed]=useState(false);
   const [refresh,setRefresh]=useState(0);
+  const [approvedCadOverlay,setApprovedCadOverlay]=useState<ApprovedCadScanOverlay|null>(null);
+  const [alignmentMeasuring,setAlignmentMeasuring]=useState(false);
   const selected=models.find(m=>m.id===selectedId)||null;
 
   const loadModels=useCallback(async()=>{
@@ -67,7 +70,9 @@ export function SiteScanPanel({assetId,components,canManage,onComponentSelect}:{
     }
   },[assetId]);
   useEffect(()=>{void loadModels();},[loadModels,refresh]);
-  useEffect(()=>{setSelectedId('');setMarkers([]);setPicked(null);},[assetId]);
+  useEffect(()=>{setSelectedId('');setMarkers([]);setPicked(null);
+    setApprovedCadOverlay(null);setAlignmentMeasuring(false);
+  },[assetId]);
   const loadMarkers=useCallback(async()=>{
     if(!selectedId){setMarkers([]);return;}
     try{
@@ -204,6 +209,7 @@ export function SiteScanPanel({assetId,components,canManage,onComponentSelect}:{
       <Label>Site scan revision</Label>
       <Select value={selectedId||'_none_'} onValueChange={v=>{
         setSelectedId(v==='_none_'?'':v);setPicked(null);setPlacing(false);
+        setApprovedCadOverlay(null);setAlignmentMeasuring(false);
       }}>
         <SelectTrigger className="min-w-0"><SelectValue placeholder="Choose an actual as-built scan"/></SelectTrigger>
         <SelectContent>
@@ -324,20 +330,28 @@ export function SiteScanPanel({assetId,components,canManage,onComponentSelect}:{
           {picked&&` Selected: (${picked.position.x.toFixed(3)}, ${picked.position.y.toFixed(3)}, ${picked.position.z.toFixed(3)}) m`}
         </p>
       </div>}
-      <div className="overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
+      {!alignmentMeasuring&&<div className="overflow-hidden rounded-lg border border-slate-700 bg-slate-950">
         <DigitalTwinViewer
           key={selected.id}
           modelUrl={selected.filePath}
           previewAssetModelId={selected.id}
           scanMode
           scanHotspots={overlay}
+          approvedCadOverlay={placing||picked?null:approvedCadOverlay}
           onScanSurfacePick={placing?onPick:undefined}
           onComponentSelect={id=>onComponentSelect(id)}
           bindings={[]}
           enableRealtime={false} showSceneTree
           showInfoPanel={false} height="560px"
         />
-      </div>
+      </div>}
+      <SiteScanAlignmentPanel
+        assetId={assetId}
+        scanModel={{id:selected.id,filePath:selected.filePath,isActive:selected.isActive}}
+        canManage={canManage}
+        onOverlayChange={setApprovedCadOverlay}
+        onMeasurementModeChange={setAlignmentMeasuring}
+      />
       <div className="rounded-md border p-3 space-y-2">
         <p className="text-sm font-semibold">Existing machine parts · scan evidence</p>
         {!markers.length&&<p className="text-xs text-muted-foreground">

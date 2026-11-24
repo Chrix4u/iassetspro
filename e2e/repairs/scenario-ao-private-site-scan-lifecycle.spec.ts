@@ -1,6 +1,7 @@
 import {readFileSync} from 'node:fs';
 import {test,expect} from '@playwright/test';
 import {getToken,lookupAssetId,lookupPlantId} from './helpers/api';
+import {authenticateAs} from './helpers/auth';
 
 /**
  * Full private-GLB/hotspot/independent-approval API transport test.
@@ -9,7 +10,7 @@ import {getToken,lookupAssetId,lookupPlantId} from './helpers/api';
  * This explicitly does NOT establish that any customer machine was scanned,
  * that OEM drawings are real, or that a physical engineer has certified them.
  */
-test('UAT: private synthetic scan, real RBAC, maker-checker and plant-safe approved hotspots',async({request})=>{
+test('UAT: private synthetic scan, real RBAC, maker-checker and plant-safe approved hotspots',async({request,page,context})=>{
   test.skip(process.env.CI!=='true'||!(process.env.DATABASE_URL||'').includes('repairs_uat'),
     'Never upload illustrative QA geometry to a real customer machine database');
   test.setTimeout(150_000);
@@ -143,4 +144,30 @@ test('UAT: private synthetic scan, real RBAC, maker-checker and plant-safe appro
   );
   expect(alignment.status(),await alignment.text()).toBe(200);
   expect((await alignment.json()).data).toBeNull();
+
+  // Exercise the REAL browser GLTFLoader, not only the JSON API client.
+  // GLTFLoader previously omitted Bearer and could not load private models.
+  await authenticateAs(context,'engineer_b');
+  await page.goto('/');
+  await page.evaluate(id=>localStorage.setItem('user_plant_id',id),plantId);
+  await page.goto('/#/asset-detail?id='+encodeURIComponent(assetId));
+  await expect(page.getByText('UAT Test Pump').first()).toBeVisible({timeout:20000});
+  await page.getByRole('tab',{name:'Visual Explorer',exact:true}).click();
+  await page.getByRole('tab',{name:/Real 3D Scan/i}).click();
+
+  const panel=page.getByTestId('smart-anatomy-site-scan');
+  await expect(panel).toBeVisible();
+  const fileResponse=page.waitForResponse(response=>
+    response.url().endsWith(uploaded.filePath)&&response.status()===200,{
+    timeout:30000,
+  });
+  await panel.getByRole('combobox').first().click();
+  await page.getByRole('option',{name:/CI synthetic machine-scan test fixture/i}).click();
+  const fileLoaded=await fileResponse;
+  const sentAuthorization=fileLoaded.request().headers()['authorization']||'';
+  expect(sentAuthorization).toMatch(/^Bearer\s+\S+/);
+  expect(fileLoaded.request().headers()['x-plant-id']).toBe(plantId);
+  expect(fileLoaded.headers()['content-type']).toContain('model/gltf-binary');
+  await expect(panel.getByText(/As-built exterior scan|As-built scan \+ verified CAD/i).first())
+    .toBeVisible({timeout:20000});
 });

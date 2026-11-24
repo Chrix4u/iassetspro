@@ -15,6 +15,8 @@ import { InteractiveMesh, type AssetMeshBinding } from './InteractiveMesh';
 import { buildImportedNodePaths, cloneImportedAnatomyMesh } from './anatomyModelMesh';
 import { matchImportedMeshBinding, type ImportedAnatomyMesh } from './anatomyBindings';
 import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
+import { getAuthHeaders } from '@/lib/api';
+import { allowSharedGltfCache, fetchPrivateModelBytes } from '@/lib/smart-anatomy/private-model-client';
 
 // ============================================================================
 // Types
@@ -158,9 +160,12 @@ function useGLTFLoader(
     }
 
     let cancelled = false;
+    const shareable = allowSharedGltfCache(modelUrl);
+    let privateSourceScene: THREE.Group | null = null;
+    const privateRequest = shareable ? null : new AbortController();
 
     // Check cache first
-    const cached = acquireFromCache(modelUrl);
+    const cached = shareable ? acquireFromCache(modelUrl) : null;
     if (cached) {
       setScene(cached);
       setError(null);
@@ -182,6 +187,7 @@ function useGLTFLoader(
     }
 
     // Dynamic import of GLTFLoader to avoid SSR issues
+    setScene(null);
     setIsLoading(true);
     setError(null);
     // CRITICAL: Defer callbacks — see above for rationale.
@@ -221,10 +227,11 @@ function useGLTFLoader(
           }
         }, 200);
 
-        gltfLoader.load(
-          modelUrl,
-          (gltf) => {
-            if (cancelled) return;
+        const onLoaded = (gltf: Awaited<ReturnType<typeof gltfLoader.parseAsync>>) => {
+            if (cancelled) {
+              if (!shareable) disposeScene(gltf.scene);
+              return;
+            }
 
             if (progressInterval) clearInterval(progressInterval);
             // CRITICAL: Defer callbacks — see cache hit path for rationale.
@@ -235,17 +242,20 @@ function useGLTFLoader(
               }
             }, 0);
 
-            // Store in cache
-            gltfCache.set(getCacheKey(modelUrl), {
-              scene: gltf.scene,
-              refCount: 1,
-              url: modelUrl,
-            });
-
+            // Public models can reuse geometry while referenced. Proprietary
+            // plant scans / manufacturer CAD must be disposed at viewer exit
+            // and reauthorized on every subsequent machine navigation.
+            if (shareable) {
+              gltfCache.set(getCacheKey(modelUrl), {
+                scene: gltf.scene, refCount: 1, url: modelUrl,
+              });
+            } else {
+              privateSourceScene = gltf.scene;
+            }
             setScene(gltf.scene.clone(true));
             setIsLoading(false);
-          },
-          (event) => {
+        };
+        const onProgress = (event: ProgressEvent) => {
             if (cancelled) return;
             if (event.lengthComputable && event.total > 0) {
               const pct = Math.round((event.loaded / event.total) * 95);
@@ -255,8 +265,8 @@ function useGLTFLoader(
                 if (!cancelled) onProgressRef.current?.(pct);
               }, 0);
             }
-          },
-          (err) => {
+        };
+        const onLoadError = (err: unknown) => {
             if (cancelled) return;
             if (progressInterval) clearInterval(progressInterval);
 
@@ -269,10 +279,19 @@ function useGLTFLoader(
             setTimeout(() => {
               if (!cancelled) onErrorRef.current?.(errorObj);
             }, 0);
-          },
-        );
+        };
+        if (privateRequest) {
+          // Bypass Three FileLoader: its URL-keyed cache and in-flight request
+          // coalescing do not distinguish users or selected plants.
+          const bytes = await fetchPrivateModelBytes(modelUrl, getAuthHeaders(), privateRequest.signal);
+          if (cancelled) return;
+          onLoaded(await gltfLoader.parseAsync(bytes, ""));
+        } else {
+          gltfLoader.load(modelUrl, onLoaded, onProgress, onLoadError);
+        }
       } catch (importErr) {
         if (cancelled) return;
+        if (progressInterval) clearInterval(progressInterval);
         const errorObj = new Error(
           `Failed to initialize GLTF loader: ${
             importErr instanceof Error ? importErr.message : String(importErr)
@@ -296,9 +315,11 @@ function useGLTFLoader(
       }
       // GLTFLoader does not expose a supported abort API here. The cancelled flag
       // prevents late loader callbacks from mutating React state after unmount.
+      privateRequest?.abort();
       loaderRef.current = null;
-      // Release cache reference on unmount
-      releaseToCache(modelUrl);
+      // Never retain uploaded private CAD across user/plant/account switches.
+      if (shareable) releaseToCache(modelUrl);
+      else if (privateSourceScene) disposeScene(privateSourceScene);
     };
   }, [modelUrl]);
 

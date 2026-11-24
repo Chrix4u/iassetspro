@@ -22,6 +22,8 @@ const USERS: Record<string, UatUser> = {
   requester:              { username: 'uat_requester',      password: UAT_PASSWORD },
   supervisor:             { username: 'uat_supervisor',     password: UAT_PASSWORD },
   planner:                { username: 'uat_planner',        password: UAT_PASSWORD },
+  engineer_a:             { username: 'uat_reliability_a', password: UAT_PASSWORD },
+  engineer_b:             { username: 'uat_reliability_b', password: UAT_PASSWORD },
   tech_single:            { username: 'uat_tech_single',    password: UAT_PASSWORD },
   tech_leader:            { username: 'uat_tech_leader',    password: UAT_PASSWORD },
   tech_assistant:         { username: 'uat_tech_assistant', password: UAT_PASSWORD },

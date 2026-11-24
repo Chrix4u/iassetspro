@@ -13,7 +13,8 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'digital_twin.view') && !isAdmin(session)) {
+    const manager = isAdmin(session) || hasPermission(session, 'digital_twin.manage');
+    if (!manager && !hasPermission(session, 'digital_twin.view')) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -43,6 +44,9 @@ export async function GET(
     }
     if (!canAccessPlantStrict(plantScope, model.asset.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (!model.isActive && !manager) {
+      return NextResponse.json({ success: false, error: 'Unapproved model details are restricted to engineering managers' }, { status: 403 });
     }
 
     const { bindings, ...modelData } = model;
@@ -84,6 +88,19 @@ export async function PUT(
     }
     if (!canAccessPlantStrict(plantScope, existing.asset.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (existing.filePath.startsWith('/api/smart-anatomy/models/')) {
+      return NextResponse.json({
+        success: false,
+        error: 'Reviewed CAD provenance and geometry are immutable; upload a new revision',
+      }, { status: 409 });
+    }
+    if (typeof body.filePath === 'string' &&
+        /^\/api\/smart-anatomy\/models(?:\/|$)/i.test(body.filePath)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Private CAD namespace cannot be assigned by the legacy asset-model editor',
+      }, { status: 409 });
     }
 
     const updateData: Record<string, unknown> = {};
@@ -158,6 +175,13 @@ export async function DELETE(
     }
     if (!canAccessPlantStrict(plantScope, existing.asset.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+
+    if (existing.filePath.startsWith('/api/smart-anatomy/models/')) {
+      return NextResponse.json({
+        success: false,
+        error: 'Protected CAD cannot be deleted from the legacy editor; withdraw engineering approval instead',
+      }, { status: 409 });
     }
 
     // Delete associated mesh bindings first

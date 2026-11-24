@@ -1,0 +1,168 @@
+import { describe,expect,it,afterEach } from 'vitest';
+import { mkdtemp,chmod,writeFile,rm,symlink,link,mkdir } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { verifyBackupEvidence } from '../smart-anatomy/verify-backup-evidence.mjs';
+
+const roots:string[]=[];
+afterEach(async()=>{for(const root of roots.splice(0))await rm(root,{recursive:true,force:true});});
+async function fixture(){
+  const root=await mkdtemp(join(tmpdir(),'cad-backup-evidence-'));
+  roots.push(root);
+  const artifact=join(root,'cad-20261119.age');
+  const manifest=join(root,'evidence.json');
+  const data=Buffer.from('age-encryption.org/v1\nsynthetic age envelope fixture, NOT real encrypted data');
+  await writeFile(artifact,data,{mode:0o600});
+  await mkdir(join(root,'live-cad'),{mode:0o700});
+  const evidence={
+    schemaVersion:1,createdAt:'2026-11-19T12:00:00.000Z',
+    sourceCadRoot:join(root,'live-cad'),
+    encryption:{enabled:true,format:'age',recipientCount:1},
+    encryptedArtifact:{
+      path:artifact,sizeBytes:data.length,
+      sha256:createHash('sha256').update(data).digest('hex'),
+    },
+  };
+  const save=async()=>writeFile(manifest,JSON.stringify(evidence),{mode:0o600});
+  await save();
+  return {root,artifact,manifest,evidence,save};
+}
+const now=new Date('2026-11-19T14:00:00.000Z');
+const output: Console={...console,log:()=>{}};
+const verified=(f:Awaited<ReturnType<typeof fixture>>,options:Record<string,unknown>={})=>
+  verifyBackupEvidence(f.manifest,{now,output,expectedCadRoot:join(f.root,'live-cad'),...options});
+describe('non-destructive encrypted CAD backup evidence gate',()=>{
+  it('verifies local encrypted artifact and explicitly refuses offsite/restore claims',async()=>{
+    const f=await fixture();
+    expect(await verified(f)).toEqual({
+      verifiedLocalEncryptedArtifact:true,verifiedOffsite:false,verifiedRestore:false,
+    });
+  });
+  it('rejects a matching digest for plaintext mislabeled as an age encrypted artifact',async()=>{
+    const f=await fixture();
+    const plaintext=Buffer.from('plain tar archive, not an encrypted age file');
+    await writeFile(f.artifact,plaintext,{mode:0o600});
+    f.evidence.encryptedArtifact.sizeBytes=plaintext.length;
+    f.evidence.encryptedArtifact.sha256=createHash('sha256').update(plaintext).digest('hex');
+    await f.save();
+    await expect(verified(f))
+      .rejects.toThrow('age encrypted-file envelope');
+  });
+  it('accepts age ASCII-armored envelope syntax as a format sanity check only',async()=>{
+    const f=await fixture();
+    const armored=Buffer.from('-----BEGIN AGE ENCRYPTED FILE-----\nsynthetic fixture, not a valid encrypted backup');
+    await writeFile(f.artifact,armored,{mode:0o600});
+    f.evidence.encryptedArtifact.sizeBytes=armored.length;
+    f.evidence.encryptedArtifact.sha256=createHash('sha256').update(armored).digest('hex');
+    await f.save();
+    expect((await verified(f)).verifiedRestore).toBe(false);
+  });
+  it('rejects modified or truncated encrypted backups',async()=>{
+    const f=await fixture();
+    const altered=Buffer.from('age-encryption.org/v1\naltered body');
+    await writeFile(f.artifact,altered,{mode:0o600});
+    await expect(verified(f)).rejects.toThrow('size mismatch');
+    f.evidence.encryptedArtifact.sizeBytes=altered.length;
+    await f.save();
+    await expect(verified(f)).rejects.toThrow('SHA-256 mismatch');
+  });
+  it('rejects plaintext or missing encryption recipients',async()=>{
+    const f=await fixture();
+    f.evidence.encryption.enabled=false;
+    await f.save();
+    await expect(verified(f)).rejects.toThrow('encrypted backup');
+    f.evidence.encryption.enabled=true;
+    f.evidence.encryption.recipientCount=0;
+    await f.save();
+    await expect(verified(f)).rejects.toThrow('recipient');
+  });
+  it('rejects stale timestamps, backup inside live source and declared credentials',async()=>{
+    const f=await fixture();
+    f.evidence.createdAt='2026-09-01T00:00:00Z';
+    await f.save();
+    await expect(verified(f)).rejects.toThrow('30 days');
+    f.evidence.createdAt='2026-11-19T12:00:00Z';
+    f.evidence.sourceCadRoot=f.root;
+    await f.save();
+    await expect(verified(f)).rejects.toThrow('does not match configured');
+    f.evidence.sourceCadRoot=join(f.root,'live-cad');
+    Object.assign(f.evidence,{includesDatabaseCredentials:true});
+    await f.save();
+    await expect(verified(f)).rejects.toThrow('credentials');
+  });
+  it('refuses a manifest that declares a different CAD root than the configured application root',async()=>{
+    const f=await fixture();
+    f.evidence.sourceCadRoot=join(f.root,'invented-cad-root');
+    await f.save();
+    await expect(verified(f)).rejects.toThrow('does not match configured');
+  });
+  it('fails closed without an independently configured CAD storage root',async()=>{
+    const f=await fixture();
+    await expect(verifyBackupEvidence(f.manifest,{now,output,expectedCadRoot:undefined}))
+      .rejects.toThrow('Configured private CAD root must be absolute');
+  });
+  it('rejects a public-readable configured source directory',async()=>{
+    const f=await fixture();
+    await chmod(f.evidence.sourceCadRoot,0o755);
+    await expect(verified(f)).rejects.toThrow('owner-only directory');
+  });
+  it('rejects an evidence manifest inside the live CAD source',async()=>{
+    const f=await fixture();
+    const inside=join(f.evidence.sourceCadRoot,'backup-evidence.json');
+    await writeFile(inside,JSON.stringify(f.evidence),{mode:0o600});
+    await expect(verifyBackupEvidence(inside,{now,output,expectedCadRoot:join(f.root,'live-cad')}))
+      .rejects.toThrow('evidence manifest cannot be stored inside');
+  });
+  it('rejects a root-wide source declaration',async()=>{
+    const f=await fixture();
+    f.evidence.sourceCadRoot='/';
+    await f.save();
+    await expect(verified(f))
+      .rejects.toThrow('does not match configured');
+  });
+  it('rejects symlinks and nonprivate backup files',async()=>{
+    const f=await fixture();
+    const alias=join(f.root,'linked.age');
+    await symlink(f.artifact,alias);
+    f.evidence.encryptedArtifact.path=alias;
+    await f.save();
+    await expect(verified(f)).rejects.toThrow('non-symlink');
+    f.evidence.encryptedArtifact.path=f.artifact;
+    await f.save();
+    await chmod(f.artifact,0o644);
+    await expect(verified(f)).rejects.toThrow('owner-only');
+  });
+  it('rejects hard-linked backup artifacts even when their digest matches',async()=>{
+    const f=await fixture();
+    const other=join(f.root,'second-name.age');
+    await link(f.artifact,other);
+    await expect(verified(f)).rejects.toThrow('non-symlink file');
+  });
+  it('rejects symlinked parent directories for the encrypted artifact',async()=>{
+    const f=await fixture();
+    const actual=join(f.root,'real-private');
+    await mkdir(actual,{mode:0o700});
+    const file=join(actual,'backup.age');
+    const bytes=Buffer.from('age-encryption.org/v1\nsynthetic age envelope fixture, NOT real encrypted data');
+    await writeFile(file,bytes,{mode:0o600});
+    const alias=join(f.root,'alias-private');
+    await symlink(actual,alias);
+    f.evidence.encryptedArtifact.path=join(alias,'backup.age');
+    await f.save();
+    await expect(verified(f)).rejects.toThrow('symlinked ancestor');
+  });
+  it('rejects future evidence dates and malformed hash fields',async()=>{
+    const f=await fixture();
+    f.evidence.createdAt='2026-11-20T00:00:00Z';
+    await f.save();
+    await expect(verified(f)).rejects.toThrow('30 days');
+    f.evidence.createdAt='2026-11-19T12:00:00Z';
+    f.evidence.encryptedArtifact.sha256='not-a-digest';
+    await f.save();
+    await expect(verified(f)).rejects.toThrow('SHA-256');
+  });
+  it('rejects missing or relative manifest paths',async()=>{
+    await expect(verifyBackupEvidence('relative.json',{now,output})).rejects.toThrow('absolute');
+  });
+});

@@ -18,6 +18,13 @@ import { Select,SelectContent,SelectItem,SelectTrigger,SelectValue } from '@/com
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { DigitalTwinViewer } from './DigitalTwinViewer';
+import { buildAnatomyReviewCsv, safeAnatomyExportFilename } from './anatomyReviewExport';
+import { PrivateCadUploader, type PrivateCadModel } from './PrivateCadUploader';
+import { SiteScanPanel } from './SiteScanPanel';
+import { normalizeDigitalTwinScene } from '@/lib/digital-twin/normalize-scene';
+import type { AssetMeshBinding } from './InteractiveMesh';
+import type { ImportedAnatomyMesh } from './anatomyBindings';
+import { suggestAnatomyMappings } from './anatomyMappingSuggestions';
 import { wrapSchematicLabel } from '@/lib/machine-schematic-label';
 import { buildSchematicLevels } from '@/lib/machine-schematic-levels';
 import { MACHINE_PHOTO_VIEWPOINTS, machinePhotoViewLabel, type MachinePhotoViewpoint } from '@/lib/machine-photo-views';
@@ -527,6 +534,57 @@ export function MachineVisualExplorer({
   const [twinId, setTwinId] = useState<string | null>(null);
   const [twinName, setTwinName] = useState<string | null>(null);
   const [twinLoading, setTwinLoading] = useState(true);
+  const canLinkAnatomy = isAdmin() || hasPermission('digital_twin.manage');
+  const canViewPrivateCadTrace = isAdmin() || hasPermission('digital_twin.view') ||
+    hasPermission('digital_twin.manage');
+  const [inspectedAnatomy, setInspectedAnatomy] = useState<(ImportedAnatomyMesh & {modelId?: string}) | null>(null);
+  const [importedAnatomy, setImportedAnatomy] = useState<ImportedAnatomyMesh[]>([]);
+  const [importedAnatomyModelId, setImportedAnatomyModelId] = useState<string | undefined>();
+  const [showMappingSuggestions, setShowMappingSuggestions] = useState(false);
+  const onAnatomyMeshList = useCallback((next: ImportedAnatomyMesh[], modelId?: string) => {
+    setImportedAnatomy(previous => previous.length===next.length &&
+      previous.every((item,index)=>item.id===next[index].id &&
+        item.componentId===next[index].componentId && item.path===next[index].path)
+      ? previous : next);
+    setImportedAnatomyModelId(modelId);
+  }, []);
+  const [anatomyTargetId, setAnatomyTargetId] = useState('');
+  const [anatomyMappingSaving, setAnatomyMappingSaving] = useState(false);
+  const [anatomyRevision, setAnatomyRevision] = useState(0);
+  const [demoModel, setDemoModel] = useState<'pump' | 'gearbox' | null>(null);
+  const [privateCadModel, setPrivateCadModel] = useState<PrivateCadModel | null>(null);
+  const [privateBindings, setPrivateBindings] = useState<AssetMeshBinding[]>([]);
+  const [publishingCadScene, setPublishingCadScene] = useState(false);
+  const [exportingCadMaintenanceTrace, setExportingCadMaintenanceTrace] = useState(false);
+  const [twinRevision, setTwinRevision] = useState(0);
+  useEffect(() => {
+    if (!privateCadModel?.id) {
+      setPrivateBindings([]);
+      return;
+    }
+    let cancelled = false;
+    void api.get<Array<Record<string, unknown>>>('/api/mesh-bindings?modelId=' +
+      encodeURIComponent(privateCadModel.id) + '&assetId=' + encodeURIComponent(asset.id))
+      .then(response => {
+        if (cancelled) return;
+        if (!response.success) throw new Error(response.error || 'Failed to load private CAD mappings');
+        const scene = normalizeDigitalTwinScene({
+          id: 'private-' + privateCadModel.id, assetId: asset.id,
+          model: { meshBindings: response.data || [] },
+        });
+        setPrivateBindings(scene.meshBindings || []);
+      })
+      .catch(() => { if(!cancelled) setPrivateBindings([]); });
+    return () => { cancelled = true; };
+  }, [privateCadModel?.id, anatomyRevision, asset.id]);
+  const onAnatomySelection = useCallback((mesh: (ImportedAnatomyMesh & {modelId?:string}) | null) => {
+    setInspectedAnatomy(previous => {
+      if(previous?.id === mesh?.id && previous?.componentId === mesh?.componentId &&
+         previous?.modelId === mesh?.modelId) return previous;
+      return mesh;
+    });
+    setAnatomyTargetId(mesh?.componentId || '');
+  }, []);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -546,6 +604,16 @@ export function MachineVisualExplorer({
 
   useEffect(() => { loadData(); }, [loadData]);
   useEffect(() => { setSelectedId(initialComponentId); }, [asset.id, initialComponentId]);
+  useEffect(() => {
+    setInspectedAnatomy(null);
+    setAnatomyTargetId('');
+    setDemoModel(null);
+    setPrivateCadModel(null);
+    setImportedAnatomy([]);
+    setImportedAnatomyModelId(undefined);
+    setShowMappingSuggestions(false);
+  }, [asset.id]);
+
   useEffect(() => {
     let cancelled = false;
     setTwinLoading(true);
@@ -684,6 +752,69 @@ export function MachineVisualExplorer({
   }, [selectedId]);
 
   const componentMap = useMemo(() => new Map(components.map((item) => [item.id, item])), [components]);
+  const anatomyCoverage = useMemo(
+    () => suggestAnatomyMappings(importedAnatomy, components), [importedAnatomy, components]);
+
+  const exportAnatomyReview = useCallback(() => {
+    if (!canLinkAnatomy || !importedAnatomyModelId || !importedAnatomy.length) return;
+    const date = new Intl.DateTimeFormat('en-GB', {
+      day:'2-digit',month:'2-digit',year:'numeric',
+    }).format(new Date()).replaceAll('/', '-');
+    const contents = buildAnatomyReviewCsv({
+      assetTag: asset.assetTag,
+      modelId: importedAnatomyModelId,
+      reportDate: date,
+      meshes: importedAnatomy,
+      candidates: anatomyCoverage.candidates,
+      components,
+    });
+    const blobUrl = URL.createObjectURL(new Blob([contents], {
+      type: 'text/csv;charset=utf-8',
+    }));
+    const anchor = document.createElement('a');
+    anchor.href = blobUrl;
+    anchor.download = safeAnatomyExportFilename(asset.assetTag, date);
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1200);
+    toast.success('Source-backed CAD mapping review exported. Proposed identities still require engineer approval.');
+  }, [asset.assetTag, importedAnatomyModelId, importedAnatomy, components, anatomyCoverage, canLinkAnatomy]);
+  const exportCadMaintenanceTrace = useCallback(async () => {
+    if (!privateCadModel?.id || !canViewPrivateCadTrace || exportingCadMaintenanceTrace) return;
+    setExportingCadMaintenanceTrace(true);
+    try {
+      const result=await api.get<unknown>(
+        '/api/smart-anatomy/models/' + encodeURIComponent(privateCadModel.id) + '/maintenance-trace',
+      );
+      if (!result.success || !result.data) {
+        toast.error(result.error || 'Unable to verify the CAD maintenance trace');
+        return;
+      }
+      const date = new Intl.DateTimeFormat('en-GB', {
+        day:'2-digit',month:'2-digit',year:'numeric',
+      }).format(new Date()).replaceAll('/', '-');
+      const fileName = safeAnatomyExportFilename(asset.assetTag, date)
+        .replace('CAD-Review-', 'CAD-Maintenance-Trace-').replace(/\.csv$/i,'.json');
+      const body = JSON.stringify(result.data,null,2) + '\n';
+      const url = URL.createObjectURL(new Blob([body],{
+        type:'application/json;charset=utf-8',
+      }));
+      const anchor = document.createElement('a');
+      anchor.href=url;
+      anchor.download=fileName;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(()=>URL.revokeObjectURL(url),1200);
+      toast.success('Source-verified CAD links and existing PM, work order, spare and tool references exported.');
+    } catch {
+      toast.error('Unable to export source-verified CAD maintenance trace');
+    } finally {
+      setExportingCadMaintenanceTrace(false);
+    }
+  }, [privateCadModel,canViewPrivateCadTrace,exportingCadMaintenanceTrace,asset.assetTag]);
+
   const handle3DComponentSelect = useCallback((componentId: string, meshName: string) => {
     if (!componentMap.has(componentId)) {
       toast.error(`3D mesh ${meshName} is not mapped to a registered component on this machine`);
@@ -691,6 +822,80 @@ export function MachineVisualExplorer({
     }
     setSelectedId(componentId);
   }, [componentMap]);
+  const mapInspectedAnatomy = useCallback(async () => {
+    const mesh=inspectedAnatomy;
+    if(!canLinkAnatomy || !mesh?.modelId || !anatomyTargetId ||
+      !components.some(component=>component.id===anatomyTargetId)) return;
+    if (privateCadModel?.id === mesh.modelId && privateCadModel.isActive) {
+      toast.error('Approved CAD links are frozen. Import a new revision to change component mappings.');
+      return;
+    }
+    setAnatomyMappingSaving(true);
+    try {
+      const query=new URLSearchParams({modelId:mesh.modelId,assetId:asset.id});
+      const existingResponse=await api.get<Array<{id:string;meshName:string;meshPath?:string|null}>>(
+        '/api/mesh-bindings?'+query);
+      if(!existingResponse.success) throw new Error(existingResponse.error || 'Cannot verify existing part mappings');
+      const existing=(existingResponse.data||[]).find(binding=>
+        binding.meshPath===mesh.path || binding.meshName===mesh.path);
+      // Canonical source-path identifier supports duplicate OEM mesh names
+      // with the existing unique(modelId,meshName) schema.
+      const payload={assetId:asset.id,componentId:anatomyTargetId,meshType:'component',
+        meshName:mesh.path,meshPath:mesh.path,isClickable:true};
+      const result=existing
+        ? await api.put('/api/mesh-bindings/'+encodeURIComponent(existing.id),payload)
+        : await api.post('/api/mesh-bindings',{modelId:mesh.modelId,...payload});
+      if(!result.success) throw new Error(result.error || 'Could not link geometry to component');
+      toast.success('CAD node linked to the existing registered machine component');
+      setAnatomyRevision(value=>value+1);
+    }catch(error){toast.error(error instanceof Error?error.message:'Could not save component link');}
+    finally{setAnatomyMappingSaving(false);}
+  }, [inspectedAnatomy,canLinkAnatomy,anatomyTargetId,components,asset.id,privateCadModel]);
+
+  const publishReviewedCadScene = useCallback(async () => {
+    const selectedModel = privateCadModel;
+    if (!canLinkAnatomy || !selectedModel?.isActive || !selectedModel.id || publishingCadScene) return;
+    setPublishingCadScene(true);
+    try {
+      let effectiveTwinId = twinId;
+      let effectiveTwinName = twinName;
+      if (!effectiveTwinId) {
+        const createdTwin = await api.post<{id:string;name:string}>('/api/digital-twins', {
+          assetId:asset.id, name:asset.name+' Digital Twin', type:'other',
+          description:'Asset digital twin with reviewed Smart Anatomy CAD',
+        });
+        if (createdTwin.success && createdTwin.data?.id) {
+          effectiveTwinId=createdTwin.data.id;
+          effectiveTwinName=createdTwin.data.name;
+        } else {
+          // Another authorized engineer may have commissioned the same asset.
+          const existing = await api.get<Array<{id:string;name:string}>>(
+            '/api/digital-twins?assetId='+encodeURIComponent(asset.id)+'&limit=1');
+          effectiveTwinId=existing.success ? existing.data?.[0]?.id || null : null;
+          effectiveTwinName=existing.success ? existing.data?.[0]?.name || null : null;
+        }
+      }
+      if (!effectiveTwinId) throw new Error('Unable to resolve the Digital Twin for this machine');
+      const scene = await api.post<{id:string}>('/api/digital-twin-scenes', {
+        twinId:effectiveTwinId,
+        modelId:selectedModel.id,
+        name:selectedModel.name+' · Engineer-reviewed CAD',
+        description:'Private, source-reviewed model for 3D technical inspection only',
+        sceneType:'3d', environment:'industrial',
+      });
+      if (!scene.success || !scene.data?.id) throw new Error(scene.error || 'Could not publish approved CAD scene');
+      setTwinId(effectiveTwinId);
+      setTwinName(effectiveTwinName);
+      setTwinRevision(revision=>revision+1);
+      setPrivateCadModel(null);
+      setInspectedAnatomy(null);
+      setDemoModel(null);
+      toast.success('Reviewed CAD is now available in this asset’s Digital Twin. Physical maintenance instructions remain separately controlled.');
+    } catch(error) {
+      toast.error(error instanceof Error?error.message:'Unable to commission the Digital Twin scene');
+    } finally { setPublishingCadScene(false); }
+  },[privateCadModel,canLinkAnatomy,publishingCadScene,twinId,twinName,asset.id,asset.name]);
+
   const childrenByParent = useMemo(() => {
     const map = new Map<string, MachineComponent[]>();
     components.forEach((item) => {
@@ -971,9 +1176,10 @@ export function MachineVisualExplorer({
         </CardHeader>
         <CardContent className="w-full min-w-0 max-w-full px-1.5 pt-0 sm:px-6">
           <Tabs value={mode} onValueChange={setMode} className="w-full min-w-0 max-w-full">
-            <TabsList className="grid h-auto w-full min-w-0 max-w-full grid-cols-2 gap-1 overflow-hidden sm:grid-cols-6">
+            <TabsList className="grid h-auto w-full min-w-0 max-w-full grid-cols-2 gap-1 overflow-hidden sm:grid-cols-4 xl:grid-cols-7">
               <TabsTrigger value="model3d" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Box className="mr-1 h-3.5 w-3.5 shrink-0" />3D Model</TabsTrigger>
               <TabsTrigger value="photo" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><ImageIcon className="mr-1 h-3.5 w-3.5 shrink-0"/>Site Photo</TabsTrigger>
+              <TabsTrigger value="site-scan" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Box className="mr-1 h-3.5 w-3.5 shrink-0"/>Real 3D Scan</TabsTrigger>
               <TabsTrigger value="realistic" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><ImageIcon className="mr-1 h-3.5 w-3.5 shrink-0" />AI Realistic</TabsTrigger>
               <TabsTrigger value="diagram" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Network className="mr-1 h-3.5 w-3.5 shrink-0" />Diagram</TabsTrigger>
               <TabsTrigger value="technical2d" className="min-w-0 h-auto min-h-9 cursor-pointer whitespace-normal break-words px-1 text-center leading-snug"><Focus className="mr-1 h-3.5 w-3.5 shrink-0" />Engineering 2D</TabsTrigger>
@@ -1002,24 +1208,88 @@ export function MachineVisualExplorer({
               </div>
             )}
 
+            <TabsContent value="site-scan" className="mt-3 space-y-2">
+              <SiteScanPanel assetId={asset.id} components={components}
+                canManage={canLinkAnatomy} onComponentSelect={id=>handle3DComponentSelect(id,'site-scan-hotspot')}/>
+            </TabsContent>
             <TabsContent value="model3d" className="mt-3 space-y-2">
               <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-[11px] leading-relaxed text-cyan-950">
-                3D meshes are maintenance targets only when explicitly mapped to the registered machine hierarchy. Unmapped geometry stays visual and cannot silently become a PM or repair component.
+                Smart Anatomy moves actual imported GLB/glTF mesh geometry for exploded views, without inventing hidden machine parts. A single-piece model cannot be disassembled. Only engineer-mapped meshes may become PM or repair targets; unverified geometry stays visual-only.
               </div>
-              {twinLoading ? (
+              <PrivateCadUploader assetId={asset.id} canManage={canLinkAnatomy}
+                selected={privateCadModel} onSelect={model=>{
+                  if (privateCadModel?.id !== model?.id || privateCadModel?.isActive !== model?.isActive) {
+                    setTwinRevision(previous => previous + 1);
+                  }
+                  setPrivateCadModel(model);
+                  setInspectedAnatomy(null);
+                  setImportedAnatomy([]);
+                  setImportedAnatomyModelId(undefined);
+                  setShowMappingSuggestions(false);
+                }} />
+              {canLinkAnatomy && privateCadModel?.isActive && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-700/50 bg-emerald-950/30 p-2">
+                  <p className="text-xs text-emerald-200">
+                    This CAD passed engineering review for inspection. Publish it to the existing asset Digital Twin scene when ready.
+                  </p>
+                  <Button size="sm" type="button" disabled={publishingCadScene}
+                    onClick={()=>void publishReviewedCadScene()}>
+                    {publishingCadScene?'Publishing approved CAD…':'Publish to asset 3D scene'}
+                  </Button>
+                </div>
+              )}
+              {privateCadModel && canViewPrivateCadTrace && (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-700 bg-slate-950/95 p-2">
+                  <p className="max-w-lg text-xs text-slate-300">
+                    Source-verified maintenance evidence · registered parts, existing PM schedules,
+                    work orders, spares and tools. Export is read-only and cannot authorize maintenance.
+                  </p>
+                  <Button size="sm" type="button" variant="outline"
+                    data-testid="smart-anatomy-maintenance-trace-export"
+                    disabled={exportingCadMaintenanceTrace}
+                    onClick={() => void exportCadMaintenanceTrace()}>
+                    {exportingCadMaintenanceTrace?'Verifying CAD links…':'Export CAD maintenance trace'}
+                  </Button>
+                </div>
+              )}
+              {privateCadModel ? (
+                <div className="space-y-2">
+                  <p className="rounded-lg border border-amber-600/50 bg-amber-950/50 p-2 text-xs text-amber-200">
+                    Private imported CAD · {privateCadModel.name} · pending engineer review.
+                    Link exact CAD nodes only to existing registered asset parts. This is not
+                    an approved maintenance or disassembly instruction.
+                  </p>
+                  <DigitalTwinViewer
+                    previewAssetModelId={privateCadModel.id}
+                    modelUrl={privateCadModel.filePath}
+                    bindings={privateBindings}
+                    height={selectionMode ? '480px' : '620px'}
+                    showSceneTree
+                    showInfoPanel={false}
+                    onComponentSelect={handle3DComponentSelect}
+                    onAnatomySelection={onAnatomySelection}
+                    onAnatomyMeshList={onAnatomyMeshList}
+                    anatomyRevision={anatomyRevision}
+                  />
+                </div>
+              ) : twinLoading ? (
                 <div className="flex min-h-[480px] items-center justify-center rounded-xl border bg-slate-950">
                   <Loader2 className="h-6 w-6 animate-spin text-cyan-400" />
                 </div>
               ) : twinId ? (
                 <div className="overflow-hidden rounded-xl border bg-slate-950">
                   <DigitalTwinViewer
+                    key={twinId+'-'+twinRevision}
                     twinId={twinId}
                     twinName={twinName}
                     assetId={asset.id}
                     height={selectionMode ? '480px' : '620px'}
-                    showSceneTree={false}
+                    showSceneTree
                     showInfoPanel={false}
                     onComponentSelect={handle3DComponentSelect}
+                    onAnatomySelection={onAnatomySelection}
+                    onAnatomyMeshList={onAnatomyMeshList}
+                    anatomyRevision={anatomyRevision}
                   />
                 </div>
               ) : (
@@ -1027,6 +1297,151 @@ export function MachineVisualExplorer({
                   <Box className="h-10 w-10 text-cyan-400" />
                   <div className="mt-3 text-sm font-semibold text-slate-200">No 3D model commissioned for this machine</div>
                   <p className="mt-1 max-w-md text-xs leading-relaxed">Upload or link a GLB/glTF model in Digital Twin and bind its meshes to verified machine components. Diagram, Engineering 2D, Exploded and image views remain available now.</p>
+                  <div className="mt-4 flex flex-wrap justify-center gap-2">
+                    <Button type="button" size="sm" variant="outline" onClick={()=>setDemoModel('pump')}>
+                      Preview example pump
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={()=>setDemoModel('gearbox')}>
+                      Preview example gearbox
+                    </Button>
+                  </div>
+                  <p className="mt-2 max-w-md text-[11px] leading-relaxed text-amber-300">
+                    Examples are original illustrative training geometry only, not this installed machine or manufacturer-approved CAD.
+                  </p>
+                </div>
+              )}
+              {!twinId && !twinLoading && !privateCadModel && demoModel && (
+                <div className="space-y-2" data-testid="smart-anatomy-original-concept-demo">
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-700 bg-amber-950/60 px-3 py-2 text-amber-100">
+                    <p className="text-xs">Original conceptual {demoModel === 'pump'?'centrifugal pump':'conveyor gearbox'} anatomy · not linked to {asset.assetTag} or maintenance records</p>
+                    <Button type="button" size="sm" variant="outline" onClick={()=>setDemoModel(null)}>Close example</Button>
+                  </div>
+                  <DigitalTwinViewer
+                    modelUrl={demoModel==='pump'
+                      ? '/smart-anatomy-demos/original-centrifugal-pump.glb'
+                      : '/smart-anatomy-demos/original-conveyor-gearbox.glb'}
+                    bindings={[]}
+                    height={selectionMode ? '480px' : '620px'}
+                    showSceneTree
+                    showInfoPanel={false}
+                  />
+                  <p className="text-[11px] text-amber-800 dark:text-amber-200">
+                    Each example has real separate CAD meshes for training interaction but is NOT a verified OEM drawing or safe disassembly plan.
+                  </p>
+                </div>
+              )}
+              {importedAnatomyModelId && importedAnatomy.length > 0 && (twinId || privateCadModel) && (
+                <div className="space-y-2 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-slate-100"
+                  data-testid="smart-anatomy-mapping-coverage">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold">CAD-to-asset mapping coverage</p>
+                      <p className="text-xs text-slate-400">
+                        {anatomyCoverage.linked.toLocaleString()} of {anatomyCoverage.total.toLocaleString()} imported mesh nodes linked
+                        {' · '}{anatomyCoverage.visualOnly.toLocaleString()} visual only
+                        {' · '}{anatomyCoverage.candidates.length} reviewable matches
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {canLinkAnatomy && (
+                        <Button size="sm" type="button" variant="outline"
+                          onClick={exportAnatomyReview}>
+                          Export mapping review CSV
+                        </Button>
+                      )}
+                      <Button size="sm" type="button" variant="outline"
+                        onClick={()=>setShowMappingSuggestions(show=>!show)}>
+                        {showMappingSuggestions?'Hide proposals':'Review proposals'}
+                      </Button>
+                    </div>
+                  </div>
+                  {showMappingSuggestions && (
+                    <div className="max-h-64 space-y-2 overflow-y-auto overscroll-contain">
+                      {anatomyCoverage.candidates.length===0 ?
+                        <p className="text-xs text-slate-400">No unambiguous name or part-code matches. Select CAD nodes manually in the 3D assembly tree.</p> :
+                        anatomyCoverage.candidates.slice(0,50).map(candidate=>(
+                          <div key={candidate.mesh.id}
+                            className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-700 p-2">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-xs font-semibold">{candidate.mesh.meshName}</p>
+                              <p className="break-all font-mono text-[10px] text-slate-400">{candidate.mesh.path}</p>
+                              <p className="text-xs text-cyan-300">
+                                Suggested: {candidate.target.componentCode} · {candidate.target.name}
+                                {' · '}{Math.round(candidate.confidence*100)}% text match
+                              </p>
+                            </div>
+                            {canLinkAnatomy && <Button size="sm" type="button" variant="outline"
+                              onClick={()=>{
+                                setInspectedAnatomy({...candidate.mesh,modelId:importedAnatomyModelId});
+                                setAnatomyTargetId(candidate.target.id);
+                              }}>
+                              Review proposed link
+                            </Button>}
+                          </div>
+                        ))
+                      }
+                      {anatomyCoverage.candidates.length>50 && (
+                        <p className="text-[11px] text-slate-400">
+                          Showing the first 50 of {anatomyCoverage.candidates.length} proposals. Use the imported CAD tree to review other nodes.
+                        </p>
+                      )}
+                      <p className="text-[11px] text-amber-300">
+                        Suggestions compare source names to registered codes/descriptions. They are NOT verified mechanical identities and never save without a manager reviewing each link.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+              {inspectedAnatomy && (twinId || privateCadModel) && (
+                <div className="rounded-lg border border-slate-700 bg-slate-950 p-3 text-slate-100 space-y-2" data-testid="smart-anatomy-selected-node">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold">{inspectedAnatomy.meshName}</p>
+                      <p className="break-all font-mono text-[11px] text-slate-400">
+                        CAD source: {inspectedAnatomy.path}
+                      </p>
+                    </div>
+                    <Badge variant="outline" className={inspectedAnatomy.verified ?
+                      'border-emerald-500 text-emerald-300' : 'border-amber-500 text-amber-300'}>
+                      {inspectedAnatomy.verified ? 'Linked to asset component' : 'Visual-only · unverified'}
+                    </Badge>
+                  </div>
+                  {inspectedAnatomy.componentId && (
+                    <p className="text-xs text-emerald-300">
+                      Linked component: {componentMap.get(inspectedAnatomy.componentId)?.componentCode || inspectedAnatomy.componentId}
+                    </p>
+                  )}
+                  {canLinkAnatomy && inspectedAnatomy.modelId &&
+                    privateCadModel?.id === inspectedAnatomy.modelId && privateCadModel.isActive && (
+                      <p className="text-xs text-amber-300">
+                        Engineering-approved component mappings are locked. Upload a new CAD revision
+                        for any further engineering changes.
+                      </p>
+                    )}
+                  {canLinkAnatomy && inspectedAnatomy.modelId &&
+                    !(privateCadModel?.id === inspectedAnatomy.modelId && privateCadModel.isActive) && (
+                    <div className="flex flex-wrap items-end gap-2">
+                      <div className="min-w-56 flex-1 space-y-1">
+                        <Label className="text-xs text-slate-300">Link this exact CAD node to a registered machine component</Label>
+                        <Select value={anatomyTargetId} onValueChange={setAnatomyTargetId}>
+                          <SelectTrigger className="border-slate-600 text-slate-100"><SelectValue placeholder="Select existing part or assembly"/></SelectTrigger>
+                          <SelectContent>{components.map(component=>(
+                            <SelectItem key={component.id} value={component.id}>
+                              {component.componentCode} · {component.name}
+                            </SelectItem>
+                          ))}</SelectContent>
+                        </Select>
+                      </div>
+                      <Button size="sm" type="button"
+                        disabled={!anatomyTargetId || anatomyMappingSaving}
+                        onClick={()=>void mapInspectedAnatomy()}>
+                        {anatomyMappingSaving?'Saving link…':'Save component link'}
+                      </Button>
+                    </div>
+                  )}
+                  <p className="text-[11px] text-slate-400">
+                    This is a mapping to an existing registered component, not certification of a manufacturer model or an approved disassembly procedure.
+                  </p>
                 </div>
               )}
             </TabsContent>
@@ -1208,9 +1623,13 @@ export function MachineVisualExplorer({
               ) : (
                 <>
                   <div>
-                    <div className="mb-1.5 flex items-center justify-between">
+                    <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                       <span className="font-semibold">Preventive maintenance</span>
-                      <Badge variant="outline">{detail?.pmSchedules?.length || 0}</Badge>
+                      <div className="flex items-center gap-2">
+                        <a href="/#/pm-schedules" className="text-[11px] text-primary underline-offset-2 hover:underline"
+                          aria-label="Open full PM schedules module">Open PM list</a>
+                        <Badge variant="outline">{detail?.pmSchedules?.length || 0}</Badge>
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       {(detail?.pmSchedules || []).slice(0, 5).map((schedule) => (
@@ -1228,9 +1647,13 @@ export function MachineVisualExplorer({
                   </div>
 
                   <div className="border-t pt-3">
-                    <div className="mb-1.5 flex items-center justify-between">
+                    <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                       <span className="flex items-center gap-1.5 font-semibold"><PackageCheck className="h-3.5 w-3.5" />Store-linked spares</span>
-                      <Badge variant="outline">{detail?.sparePartLinks?.length || 0}</Badge>
+                      <div className="flex items-center gap-2">
+                        <a href="/#/inventory-items" className="text-[11px] text-primary underline-offset-2 hover:underline"
+                          aria-label="Open inventory items module">Open stock</a>
+                        <Badge variant="outline">{detail?.sparePartLinks?.length || 0}</Badge>
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       {(detail?.sparePartLinks || []).slice(0, 5).map((link) => (
@@ -1269,9 +1692,13 @@ export function MachineVisualExplorer({
                   </div>
 
                   <div className="border-t pt-3">
-                    <div className="mb-1.5 flex items-center justify-between">
+                    <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                       <span className="font-semibold">Recent maintenance & work orders</span>
-                      <Badge variant="outline">{(detail?.maintenanceHistory?.length || 0) + (detail?.workOrderComponents?.length || 0)}</Badge>
+                      <div className="flex items-center gap-2">
+                        <a href="/#/maintenance-work-orders" className="text-[11px] text-primary underline-offset-2 hover:underline"
+                          aria-label="Open work orders module">Open WO list</a>
+                        <Badge variant="outline">{(detail?.maintenanceHistory?.length || 0) + (detail?.workOrderComponents?.length || 0)}</Badge>
+                      </div>
                     </div>
                     <div className="space-y-1.5">
                       {(detail?.maintenanceHistory || []).slice(0, 4).map((entry) => (

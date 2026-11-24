@@ -68,6 +68,11 @@ export interface TwinToolbarProps {
   onViewModeChange?: (mode: '3d' | '2d-front' | '2d-top' | '2d-side') => void;
   /** Whether the left scene tree panel is open (shifts toolbar right) */
   isTreeOpen?: boolean;
+  /** Exact number of actual meshes in the imported model; single-mesh files cannot explode. */
+  anatomyGroupCount?: number;
+  /** Surface scans may not explode their captured exterior into OEM parts. */
+  allowExplosion?:boolean;
+  isIllustrativeDemo?: boolean;
 }
 
 // ============================================================================
@@ -135,7 +140,8 @@ function ToolbarDivider() {
 // Explode Slider Popup
 // ============================================================================
 
-function ExplodeSliderPopup() {
+function ExplodeSliderPopup({ groupCount }: { groupCount?: number }) {
+  const canExplode = groupCount === undefined || groupCount >= 2;
   const explodeMode = useDigitalTwinStore(s => s.explodeMode);
   const explodeProgress = useDigitalTwinStore(s => s.explodeProgress);
   const setExplodeProgress = useDigitalTwinStore(s => s.setExplodeProgress);
@@ -150,7 +156,7 @@ function ExplodeSliderPopup() {
             label="Exploded View"
             shortcut="E"
             isActive={explodeMode}
-            onClick={toggleExplodeMode}
+            onClick={() => { if (canExplode) toggleExplodeMode(); }}
           />
         </div>
       </DropdownMenuTrigger>
@@ -159,9 +165,14 @@ function ExplodeSliderPopup() {
         align="center"
         className="bg-slate-900 border-slate-700 text-slate-200 w-52"
       >
-        <DropdownMenuLabel className="text-slate-300">Explode Progress</DropdownMenuLabel>
-        <div className="px-2 pb-2 pt-1">
+        <DropdownMenuLabel className="text-slate-300">3D Smart Anatomy · Explosion</DropdownMenuLabel>
+        {!canExplode && <p className="px-2 pb-2 text-xs text-amber-300">
+          {groupCount === 0 ? 'Load a source-backed multi-part 3D model first.' :
+            'Only one imported source geometry group exists; multiple surfaces of one CAD part are not separable parts.'}
+        </p>}
+        {canExplode && <div className="px-2 pb-2 pt-1">
           <Slider
+            aria-label="3D explosion intensity"
             value={[explodeProgress * 100]}
             min={0}
             max={100}
@@ -174,7 +185,7 @@ function ExplodeSliderPopup() {
             <span>{Math.round(explodeProgress * 100)}%</span>
             <span>Expanded</span>
           </div>
-        </div>
+        </div>}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -306,6 +317,9 @@ export function TwinToolbar({
   viewMode = '3d',
   onViewModeChange,
   isTreeOpen = false,
+  anatomyGroupCount,
+  allowExplosion=true,
+  isIllustrativeDemo = false,
 }: TwinToolbarProps) {
   const explodeMode = useDigitalTwinStore(s => s.explodeMode);
   const sectionMode = useDigitalTwinStore(s => s.sectionMode);
@@ -389,7 +403,7 @@ export function TwinToolbar({
         <ToolbarDivider />
 
         {/* ── Analysis Tools ────────────────────────────────────────────── */}
-        <ExplodeSliderPopup />
+        {allowExplosion && <ExplodeSliderPopup groupCount={anatomyGroupCount} />}
         <SectionPlanePopup />
         <ToolbarButton
           icon={<Eye className="h-4 w-4" />}
@@ -398,13 +412,13 @@ export function TwinToolbar({
           isActive={!!isolationAssetId}
           onClick={handleIsolationToggle}
         />
-        <ToolbarButton
+        {!isIllustrativeDemo && <ToolbarButton
           icon={<Activity className="h-4 w-4" />}
           label="IoT Overlay"
           shortcut="O"
           isActive={iotOverlayEnabled}
           onClick={toggleIoTOverlay}
-        />
+        />}
 
         <ToolbarDivider />
 

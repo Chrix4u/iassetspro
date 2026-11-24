@@ -16,6 +16,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Progress } from '@/components/ui/progress';
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
 import { AsyncSearchableSelect } from '@/components/ui/searchable-select';
+import { FunctionalLocationPicker } from '@/components/assets/FunctionalLocationPicker';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Sparkles, Loader2, CheckCircle2, Building2, Wrench, Package,
   ClipboardList, Activity, Cpu, AlertTriangle, Layers, GitBranch,
@@ -60,9 +62,12 @@ type GenStep = 'input' | 'generating' | 'result';
 export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGeneratorProps) {
   const [step, setStep] = useState<GenStep>('input');
   const [machineName, setMachineName] = useState('');
+  const [machineCode, setMachineCode] = useState('');
   const [additionalContext, setAdditionalContext] = useState('');
   const [plantId, setPlantId] = useState('');
   const [categoryId, setCategoryId] = useState('');
+  const [functionalLocationId, setFunctionalLocationId] = useState('');
+  const [acknowledgeUnverified, setAcknowledgeUnverified] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState('');
@@ -78,9 +83,12 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
   const reset = () => {
     setStep('input');
     setMachineName('');
+    setMachineCode('');
     setAdditionalContext('');
     setPlantId('');
     setCategoryId('');
+    setFunctionalLocationId('');
+    setAcknowledgeUnverified(false);
     setGenerating(false);
     setProgress(0);
     setProgressLabel('');
@@ -201,6 +209,14 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
       return;
     }
 
+    if (!plantId || !functionalLocationId) {
+      toast.error('Select the machine plant and full installation location path');
+      return;
+    }
+    if (!acknowledgeUnverified) {
+      toast.error('Please acknowledge that AI-generated details must be verified by an engineer');
+      return;
+    }
     setStep('generating');
     setGenerating(true);
     setProgress(5);
@@ -229,7 +245,8 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
     );
 
     try {
-      const payload: any = { machineName: machineName.trim() };
+      const payload: any = { machineName: machineName.trim(), functionalLocationId, acknowledgeUnverified: true };
+      if (machineCode.trim()) payload.machineCode = machineCode.trim().toUpperCase();
       if (additionalContext.trim()) payload.additionalContext = additionalContext.trim();
       if (plantId) payload.plantId = plantId;
       if (categoryId) payload.categoryId = categoryId;
@@ -243,7 +260,7 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
         setProgressLabel('Complete!');
         setResult(res.data);
         setStep('result');
-        toast.success(`Asset "${res.data.asset.name}" created successfully!`);
+        toast.success(`AI draft "${res.data.asset.name}" saved. Verify before commissioning.`);
         onSuccess?.();
       } else {
         setError(res.error || 'Failed to generate asset');
@@ -276,7 +293,7 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
               </div>
               <div>
                 <h2 className="text-lg font-semibold leading-none tracking-tight">AI Asset Generator</h2>
-                <p className="text-sm text-muted-foreground">Enter a machine name and AI will create everything</p>
+                <p className="text-sm text-muted-foreground">Enter machine details to create an unverified engineering draft</p>
               </div>
             </div>
           </div>
@@ -295,6 +312,31 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
               <p className="text-xs text-muted-foreground">
                 Be specific for best results — include type, brand, or model if known
               </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Internal Machine Code (optional)</Label>
+              <Input
+                placeholder="e.g. ST-001"
+                value={machineCode}
+                onChange={event => setMachineCode(event.target.value.toUpperCase())}
+                maxLength={40}
+                className="h-11 font-mono"
+              />
+              {machineCode.trim() ? (
+                /^[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(machineCode.trim()) && machineCode.trim().length >= 3 ? (
+                  <p className="text-xs text-muted-foreground">
+                    Code preview: {machineCode.trim()} → {machineCode.trim()}-A01 → {machineCode.trim()}-A01-C01 → {machineCode.trim()}-A01-C01-P01.
+                    Assemblies, components and proposed parts receive derived internal codes; genuine OEM numbers remain separate.
+                  </p>
+                ) : (
+                  <p role="alert" className="text-xs text-red-600">
+                    Use 3–40 letters/numbers in groups separated by hyphens.
+                  </p>
+                )
+              ) : (
+                <p className="text-xs text-muted-foreground">An AI-prefixed machine code will be generated unless you enter your own unique code.</p>
+              )}
             </div>
 
             {/* Additional context */}
@@ -316,7 +358,7 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
                 <Label>Plant</Label>
                 <AsyncSearchableSelect
                   value={plantId}
-                  onValueChange={setPlantId}
+                  onValueChange={value => { setPlantId(value); setFunctionalLocationId(''); }}
                   fetchOptions={async () => {
                     const res = await api.get('/api/plants');
                     if (res.success && res.data) {
@@ -351,6 +393,26 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
                   searchPlaceholder="Search categories..."
                 />
               </div>
+            </div>
+            {plantId && (
+              <FunctionalLocationPicker
+                plantId={plantId}
+                value={functionalLocationId}
+                onValueChange={setFunctionalLocationId}
+                label="Installation Location Path *"
+                placeholder="Select the full coded machine installation path"
+              />
+            )}
+            <div className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-950 dark:border-amber-800 dark:bg-amber-950/20 dark:text-amber-100">
+              <Checkbox
+                id="ai-draft-acknowledgment"
+                checked={acknowledgeUnverified}
+                onCheckedChange={value => setAcknowledgeUnverified(value === true)}
+                className="mt-0.5"
+              />
+              <label htmlFor="ai-draft-acknowledgment" className="cursor-pointer text-xs leading-relaxed">
+                I understand AI-generated machine details and illustrations are unverified suggestions, not manufacturer/OEM evidence. The asset will remain on standby, and no AI PM schedule will generate a work order until reviewed and activated.
+              </label>
             </div>
           </div>
 
@@ -388,11 +450,11 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
             <Button variant="outline" onClick={() => handleClose(false)}>Cancel</Button>
             <Button
               onClick={handleGenerate}
-              disabled={!machineName.trim()}
+              disabled={!machineName.trim() || !plantId || !functionalLocationId || !acknowledgeUnverified || (!!machineCode.trim() && (machineCode.trim().length < 3 || !/^[A-Z0-9]+(?:-[A-Z0-9]+)*$/.test(machineCode.trim())))}
               className="bg-violet-600 hover:bg-violet-700 text-white gap-2"
             >
               <Sparkles className="h-4 w-4" />
-              Generate with AI
+              Create AI Draft
             </Button>
           </div>
         </>
@@ -421,7 +483,7 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
           </div>
 
           <p className="text-xs text-muted-foreground max-w-xs text-center">
-            The AI is analyzing &quot;{machineName}&quot; and generating sub-systems, components, spare parts, PM schedules, and more...
+            The AI is drafting possible sub-systems, components, spare parts and inactive PM proposals. Manufacturer accuracy and maintenance limits require engineering verification.
           </p>
         </div>
       )}
@@ -539,7 +601,7 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
 
                     {threeDProvider === 'programmatic' && threeDStatus === 'idle' && (
                       <p className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20 rounded-md px-2.5 py-1.5">
-                        Uses your configured AI to build a 3D model from geometric shapes — no API key needed.
+                        Creates an illustrative 3D shape model, NOT the manufacturer's actual exploded mechanical assembly. The configured AI provider may still incur usage charges.
                       </p>
                     )}
                     {threeDProvider === 'meshy' && threeDStatus === 'idle' && (
@@ -598,10 +660,10 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
               <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800">
                 <p className="text-sm font-medium text-emerald-700 dark:text-emerald-400 mb-1.5">What you can do now:</p>
                 <ul className="text-xs text-emerald-600 dark:text-emerald-500 space-y-0.5">
-                  <li>• View the AI-generated machine illustration on the asset card</li>
+                  <li>• View the illustrative (not OEM-certified) machine image on the asset card</li>
                   <li>• Explore the interactive system diagram with all labeled components</li>
                   <li>• Check the Bill of Materials and spare parts inventory</li>
-                  <li>• Review and run preventive maintenance schedules</li>
+                  <li>• Review and approve draft PM schedules before activation</li>
                   <li>• Explore the digital twin configuration</li>
                   <li>• Create maintenance requests and work orders for this machine</li>
                 </ul>
@@ -612,11 +674,15 @@ export function AIAssetGenerator({ open, onOpenChange, onSuccess }: AIAssetGener
           <div className="flex flex-col-reverse gap-2 mt-4 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => handleClose(false)}>Close</Button>
             <Button
-              onClick={() => { handleClose(false); }}
+              onClick={() => {
+                const assetId = result.asset.id;
+                handleClose(false);
+                navigate('assets-machines', { id: assetId });
+              }}
               className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2"
             >
               <CheckCircle2 className="h-4 w-4" />
-              Done
+              Review Asset & Location
             </Button>
           </div>
         </>

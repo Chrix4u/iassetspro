@@ -104,6 +104,7 @@ export interface PenTestRecord {
   tester?: string;
   findings: SecurityFinding[];
   riskScore?: number;         // 0-100
+  notes?: string;            // reviewer-provided assessment and follow-up
   createdAt: string;
   updatedAt: string;
 }
@@ -330,7 +331,7 @@ export const SecurityHardeningService = {
 
       state.count++;
       rateLimitState.set(key, state);
-      return { allowed: true, remaining: rule.maxRequests - state.count, resetInMs: rule.windowStart + rule.windowMs - now, ruleId };
+      return { allowed: true, remaining: rule.maxRequests - state.count, resetInMs: Math.max(0, state.windowStart + rule.windowMs - now), ruleId };
     }
 
     return { allowed: true, remaining: Number.MAX_SAFE_INTEGER, resetInMs: 0 };

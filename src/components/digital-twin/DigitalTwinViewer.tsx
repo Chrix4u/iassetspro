@@ -23,7 +23,8 @@ import { api } from '@/lib/api';
 
 import { SceneLighting } from './SceneLighting';
 import { GroundPlane } from './GroundPlane';
-import { ModelLoader } from './ModelLoader';
+import { ModelLoader, type ScanOverlayHotspot, type ScanSurfacePick } from './ModelLoader';
+import { countImportedSourceGroups, type ImportedAnatomyMesh } from './anatomyBindings';
 import { InteractiveMesh, type AssetMeshBinding } from './InteractiveMesh';
 import { IoTOverlayLayer } from './IoTOverlayLayer';
 import { SectionPlane } from './SectionPlane';
@@ -51,7 +52,20 @@ import { Button } from '@/components/ui/button';
 // Types
 // ============================================================================
 
+export interface ApprovedCadScanOverlay {
+  cadModelUrl:string;
+  translation:{x:number;y:number;z:number};
+  rotation:[number,number,number,number];
+  opacity?:number;
+}
+
 export interface DigitalTwinViewerProps {
+  /** Independently approved CAD registration on the same installed asset. */
+  approvedCadOverlay?:ApprovedCadScanOverlay|null;
+  /** As-built LiDAR/photogrammetry model; never inferred OEM internals. */
+  scanMode?: boolean;
+  scanHotspots?: ScanOverlayHotspot[];
+  onScanSurfacePick?: (selection: ScanSurfacePick) => void;
   /** Scene ID to load (null for empty state) */
   sceneId?: string | null;
   /** Override model URL (optional) */
@@ -82,6 +96,14 @@ export interface DigitalTwinViewerProps {
   errorComponent?: (error: string, retry: () => void) => React.ReactNode;
   /** Called when a mesh explicitly mapped to a maintainable component is selected. */
   onComponentSelect?: (componentId: string, meshName: string) => void;
+  /** Inform asset explorer of inspected real geometry (mapped or visual-only). */
+  onAnatomySelection?: (mesh: (ImportedAnatomyMesh & { modelId?: string }) | null) => void;
+  /** Expose factual imported CAD nodes for optional engineer-reviewed mapping suggestions. */
+  onAnatomyMeshList?: (meshes: ImportedAnatomyMesh[], modelId?: string) => void;
+  /** Reload bindings after an authorized mapping change; does not reload CAD bytes. */
+  anatomyRevision?: number;
+  /** AssetModel ID for an authorized but not yet commissioned private CAD preview. */
+  previewAssetModelId?: string;
 }
 
 // ============================================================================
@@ -242,19 +264,17 @@ ErrorStateOverlay.displayName = 'ErrorStateOverlay';
 // ============================================================================
 
 function CameraController({ locked2D = false }: { locked2D?: boolean }) {
-  const { cameraPosition, cameraTarget, isTransitioning } = useCameraControls();
+  const { cameraPosition, cameraTarget } = useCameraControls();
   const controlsRef = useRef<any>(null);
-  // Use refs to avoid unstable deps in useEffect.
-  // cameraPosition/cameraTarget are arrays that change reference on each
-  // animation frame — putting them directly in deps causes Error #185.
+  // Synchronize camera references after commit, never mutate refs during React
+  // rendering. This avoids the React 19 refs lint error and does not update
+  // component state or cause a Canvas render loop.
   const positionRef = useRef(cameraPosition);
   const targetRef = useRef(cameraTarget);
-  const transitioningRef = useRef(isTransitioning);
-
-  // Sync refs without causing re-renders
-  positionRef.current = cameraPosition;
-  targetRef.current = cameraTarget;
-  transitioningRef.current = isTransitioning;
+  useEffect(() => {
+    positionRef.current = cameraPosition;
+    targetRef.current = cameraTarget;
+  }, [cameraPosition, cameraTarget]);
 
   // Update OrbitControls once after mount.
   // Subsequent position updates happen via R3F's internal frame loop,
@@ -268,7 +288,6 @@ function CameraController({ locked2D = false }: { locked2D?: boolean }) {
     ctrl.object.position.set(position[0], position[1], position[2]);
     ctrl.update();
     // Only run once after mount — subsequent updates happen via R3F's frame loop
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
@@ -321,10 +340,14 @@ BackgroundClickHandler.displayName = 'BackgroundClickHandler';
 // CRITICAL: Set displayName on ALL components so React's error boundaries
 // show real names in production builds (instead of minified rA, nm, etc.)
 
+// A stable singleton avoids rebaking every imported CAD mesh when the viewer
+// receives an implicit empty binding collection on each React render.
+const EMPTY_ANATOMY_BINDINGS: AssetMeshBinding[] = [];
+
 export function DigitalTwinViewer({
   sceneId = null,
   modelUrl: propModelUrl,
-  bindings: propBindings = [],
+  bindings: propBindings = EMPTY_ANATOMY_BINDINGS,
   assetId = null,
   twinId = null,
   twinName = null,
@@ -337,6 +360,14 @@ export function DigitalTwinViewer({
   loadingComponent,
   errorComponent,
   onComponentSelect,
+  onAnatomySelection,
+  onAnatomyMeshList,
+  anatomyRevision = 0,
+  previewAssetModelId,
+  scanMode=false,
+  scanHotspots=[],
+  onScanSurfacePick,
+  approvedCadOverlay=null,
 }: DigitalTwinViewerProps) {
   // ── Store state ──────────────────────────────────────────────────────────
   const currentScene = useDigitalTwinStore((s) => s.currentScene);
@@ -356,12 +387,13 @@ export function DigitalTwinViewer({
   // Scene identity resolved from twinId when no explicit sceneId is supplied.
   const [resolvedSceneId, setResolvedSceneId] = useState<string | null>(null);
   const effectiveSceneId = sceneId ?? resolvedSceneId;
+  const isIllustrativeDemo = Boolean(propModelUrl && !sceneId && !twinId);
 
   // ── Hooks ────────────────────────────────────────────────────────────────
   const { resetCamera, setCameraPosition, setCameraTarget } = useCameraControls();
   const { error: hookError, refresh } = useDigitalTwinScene(effectiveSceneId, {
-    iotPollInterval,
-    enableRealtime,
+    iotPollInterval: isIllustrativeDemo ? 0 : iotPollInterval,
+    enableRealtime: !isIllustrativeDemo && enableRealtime,
   });
 
   // ── Load asset data when scene loads or selection changes ──────────────
@@ -371,11 +403,12 @@ export function DigitalTwinViewer({
   // Using useEffect ensures loadAssetData fires AFTER the render is committed,
   // completely eliminating the cascading setState issue.
   useEffect(() => {
+    if (isIllustrativeDemo) return; // Never fetch live asset data for sample geometry.
     const assetId = selectedAssetId ?? currentScene?.assetId;
     if (assetId) {
       loadAssetData(assetId);
     }
-  }, [selectedAssetId, currentScene?.assetId, loadAssetData]);
+  }, [selectedAssetId, currentScene?.assetId, loadAssetData, isIllustrativeDemo]);
 
   // ── Local UI state ──────────────────────────────────────────────────────
   const [isTreeOpen, setIsTreeOpen] = useState(showSceneTree);
@@ -384,6 +417,23 @@ export function DigitalTwinViewer({
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [isModelLoading, setIsModelLoading] = useState(false);
   const [modelError, setModelError] = useState<string | null>(null);
+  const [anatomyMeshCount, setAnatomyMeshCount] = useState(0);
+  const [anatomyMeshes, setAnatomyMeshes] = useState<ImportedAnatomyMesh[]>([]);
+  const anatomySourceGroupCount = useMemo(
+    () => countImportedSourceGroups(anatomyMeshes), [anatomyMeshes],
+  );
+  const onAnatomyManifest = useCallback((next: ImportedAnatomyMesh[])=>{
+    setAnatomyMeshes(previous=>{
+      if(previous.length===next.length && previous.every((item,index)=>{
+        const newer=next[index];
+        return item.id===newer.id && item.path===newer.path &&
+          item.selectionKey===newer.selectionKey && item.componentId===newer.componentId &&
+          item.isCadSurface===newer.isCadSurface;
+      })) return previous;
+      return next;
+    });
+    onAnatomyMeshList?.(next, previewAssetModelId || currentScene?.modelId);
+  }, [onAnatomyMeshList, previewAssetModelId, currentScene?.modelId]);
   const [retryCount, setRetryCount] = useState(0);
 
   // Scene resolution state (when twinId is used without sceneId)
@@ -533,6 +583,59 @@ export function DigitalTwinViewer({
 
   // ── Effective model URL ─────────────────────────────────────────────────
   const effectiveModelUrl = propModelUrl ?? resolvedModelUrl ?? modelUrl;
+  const isPrivateCad = Boolean(effectiveModelUrl &&
+    /^\/api\/smart-anatomy\/models\/[0-9a-f-]{36}\/file$/i.test(effectiveModelUrl));
+  const [privateCad, setPrivateCad] = useState<{source: string; url: string} | null>(null);
+  const [privateCadLoading, setPrivateCadLoading] = useState(false);
+  useEffect(() => {
+    if (!isPrivateCad || !effectiveModelUrl) return;
+    let cancelled=false;
+    let objectUrl: string | null=null;
+    setPrivateCadLoading(true);
+    setModelError(null);
+    void api.getRaw(effectiveModelUrl, { cache: 'no-store' })
+      .then(async response=>{
+        if(!response.ok) throw new Error('Private CAD access denied or model file unavailable');
+        const blob=await response.blob();
+        if(blob.type && !blob.type.includes('gltf-binary') && !blob.type.includes('octet-stream')){
+          throw new Error('Private CAD endpoint returned an unexpected content type');
+        }
+        const next=URL.createObjectURL(blob);
+        if(cancelled){URL.revokeObjectURL(next);return;}
+        objectUrl=next;
+        setPrivateCad({source:effectiveModelUrl,url:next});
+      })
+      .catch(error=>{
+        if(!cancelled)setModelError(error instanceof Error?error.message:'Cannot load private CAD');
+      })
+      .finally(()=>{if(!cancelled)setPrivateCadLoading(false);});
+    return ()=>{
+      cancelled=true;
+      if(objectUrl)URL.revokeObjectURL(objectUrl);
+    };
+  },[isPrivateCad,effectiveModelUrl]);
+  // GLTFLoader cannot send app bearer tokens; retrieve private model using the
+  // authenticated API client, then hand it a short-lived local object URL.
+  const renderedModelUrl = isPrivateCad
+    ? (privateCad?.source===effectiveModelUrl ? privateCad.url : null)
+    : effectiveModelUrl;
+  useEffect(()=>{
+    if (isIllustrativeDemo) {
+      const store=useDigitalTwinStore.getState();
+      store.selectMesh(null, null);
+      store.setExplodeProgress(0);
+    }
+  },[isIllustrativeDemo,propModelUrl]);
+  const previousAnatomyRevisionRef = useRef(anatomyRevision);
+  useEffect(() => {
+    if (previousAnatomyRevisionRef.current === anatomyRevision) return;
+    previousAnatomyRevisionRef.current = anatomyRevision;
+    if (effectiveSceneId) void loadScene(effectiveSceneId);
+  }, [anatomyRevision, effectiveSceneId, loadScene]);
+  useEffect(() => {
+    setAnatomyMeshCount(0);
+    setAnatomyMeshes([]);
+  }, [effectiveModelUrl]);
 
   // ── Error handling ──────────────────────────────────────────────────────
   const effectiveError = sceneError || hookError || modelError;
@@ -611,8 +714,9 @@ export function DigitalTwinViewer({
   const handleMeshSelectFromTree = useCallback(
     (meshName: string, assetId?: string) => {
       // Use the already-subscribed actions instead of getState()
-      selectMesh(meshName, assetId);
-      setInfoPanelOpen(true);
+      // Visual-only CAD nodes must not inherit the previously selected asset.
+      selectMesh(meshName, assetId || '');
+      setInfoPanelOpen(Boolean(assetId));
     },
     [selectMesh, setInfoPanelOpen],
   );
@@ -625,14 +729,23 @@ export function DigitalTwinViewer({
   );
 
   // ── Bindings for exploded view and maintenance-component handoff ───────
-  const effectiveBindings: AssetMeshBinding[] = propBindings.length > 0
-    ? propBindings
-    : (currentScene?.meshBindings ?? []);
+  // An original/demo model URL is strictly visual-only. Do not accidentally
+  // apply another installed asset's cached Digital Twin component bindings.
+  const effectiveBindings = useMemo<AssetMeshBinding[]>(() => (
+    propModelUrl ? propBindings :
+      propBindings.length > 0 ? propBindings :
+        (currentScene?.meshBindings ?? EMPTY_ANATOMY_BINDINGS)
+  ), [propModelUrl, propBindings, currentScene?.meshBindings]);
   const selectedBinding = useMemo(
     () => effectiveBindings.find((binding) => binding.meshName === selectedMeshName) ?? null,
     [effectiveBindings, selectedMeshName],
   );
   const lastComponentSelectionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!onAnatomySelection) return;
+    const inspected = anatomyMeshes.find(mesh => mesh.selectionKey === selectedMeshName);
+    onAnatomySelection(inspected ? {...inspected,modelId:previewAssetModelId || currentScene?.modelId} : null);
+  }, [onAnatomySelection, selectedMeshName, anatomyMeshes, currentScene?.modelId, previewAssetModelId]);
 
   useEffect(() => {
     if (!selectedBinding?.componentId || !onComponentSelect) {
@@ -680,31 +793,49 @@ export function DigitalTwinViewer({
               <GroundPlane />
 
               {/* Model */}
-              {effectiveModelUrl && (
+              {renderedModelUrl && (
                 <ModelLoader
-                  modelUrl={effectiveModelUrl}
+                  modelUrl={renderedModelUrl}
                   bindings={effectiveBindings}
                   onLoadingStart={handleModelLoadingStart}
                   onLoadingComplete={handleModelLoadingComplete}
+                  onMeshCount={setAnatomyMeshCount}
+                  onAnatomyManifest={onAnatomyManifest}
+                  scanMode={scanMode}
+                  scanHotspots={scanHotspots}
+                  onScanSurfacePick={onScanSurfacePick}
+                  onScanHotspotSelect={componentId=>onComponentSelect?.(componentId,'site-scan-hotspot')}
+                  modelLocalChildren={scanMode && approvedCadOverlay ? (
+                    <group
+                      position={[
+                        approvedCadOverlay.translation.x,
+                        approvedCadOverlay.translation.y,
+                        approvedCadOverlay.translation.z,
+                      ]}
+                      quaternion={approvedCadOverlay.rotation}>
+                      <ModelLoader
+                        modelUrl={approvedCadOverlay.cadModelUrl}
+                        bindings={EMPTY_ANATOMY_BINDINGS}
+                        autoScale={false} autoCenter={false}
+                        displayOpacity={approvedCadOverlay.opacity??0.42}
+                      />
+                    </group>
+                  ) : undefined}
                   onError={handleModelError}
                   onProgress={handleProgress}
                 />
               )}
 
               {/* Exploded view */}
-              <ExplodedView bindings={effectiveBindings} />
+              {!scanMode && !onScanSurfacePick && <ExplodedView bindings={effectiveBindings} />}
 
               {/* Section plane */}
               <SectionPlane />
 
-              {/* IoT overlay */}
-              <IoTOverlayLayer />
-
-              {/* Hotspots */}
-              <HotspotLayer />
-
-              {/* Annotations */}
-              <AnnotationLayer />
+              {/* Original illustrative demo files must not show previous asset telemetry. */}
+              {!isIllustrativeDemo && !scanMode && !onScanSurfacePick && <IoTOverlayLayer />}
+              {!isIllustrativeDemo && !scanMode && !onScanSurfacePick && <HotspotLayer />}
+              {!isIllustrativeDemo && !scanMode && !onScanSurfacePick && <AnnotationLayer />}
 
               {/* Background click handler (deselect) */}
               <BackgroundClickHandler />
@@ -716,7 +847,7 @@ export function DigitalTwinViewer({
       </Canvas>
 
       {/* ── Loading overlay ──────────────────────────────────────────────── */}
-      {(isLoadingScene || isResolvingScene || (isModelLoading && loadingProgress < 100)) && (
+      {(isLoadingScene || isResolvingScene || privateCadLoading || (isModelLoading && loadingProgress < 100)) && (
         <div className="absolute inset-0 flex items-center justify-center z-10 bg-black/30 backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3">
             <div className="relative">
@@ -775,7 +906,17 @@ export function DigitalTwinViewer({
             <Monitor className="h-3 w-3 text-cyan-400" />
             <span className="text-[10px] text-slate-400">Digital Twin Viewer · {viewMode === '3d' ? '3D' : viewMode.replace('2d-', '2D ').replace(/^2D /, '2D ').replace(/\b\w/g, c => c.toUpperCase())}</span>
           </div>
-          {currentScene && (
+          {effectiveModelUrl && anatomyMeshCount > 0 && (
+            <span className="text-[10px] text-slate-400" aria-live="polite">
+              {scanMode ? (approvedCadOverlay ? 'As-built scan + verified CAD registration overlay · inspection only' : 'As-built exterior scan · ' + anatomyMeshCount.toLocaleString() + ' imported surfaces · no inferred internal parts') : anatomySourceGroupCount === 0
+                ? 'Inspecting imported geometry groups…'
+                : anatomySourceGroupCount === 1
+                  ? anatomyMeshCount.toLocaleString() + ' mesh surfaces · one source geometry group; no explosion'
+                  : anatomyMeshCount.toLocaleString() + ' meshes · ' +
+                    anatomySourceGroupCount.toLocaleString() + ' imported geometry groups (visual-only until approved)'}
+            </span>
+          )}
+          {!propModelUrl && currentScene && (
             <>
               <span className="text-slate-700">•</span>
               <span className="text-[10px] text-slate-400">{currentScene.name}</span>
@@ -805,6 +946,9 @@ export function DigitalTwinViewer({
           viewMode={viewMode}
           onViewModeChange={handleViewModeChange}
           isTreeOpen={isTreeOpen}
+          anatomyGroupCount={scanMode ? 0 : anatomySourceGroupCount}
+          allowExplosion={!scanMode && !onScanSurfacePick}
+          isIllustrativeDemo={isIllustrativeDemo}
         />
       )}
 
@@ -813,6 +957,10 @@ export function DigitalTwinViewer({
         isOpen={isTreeOpen}
         onToggle={handleToggleTree}
         onMeshSelect={handleMeshSelectFromTree}
+        anatomyMeshes={anatomyMeshes}
+        anatomyTitle={scanMode ? 'As-built site scan · visible surfaces only' : isPrivateCad ? 'Private CAD · pending commissioning' :
+          isIllustrativeDemo ? 'Original illustrative CAD anatomy' : undefined}
+        suppressSceneFallback={isIllustrativeDemo}
       />
 
       {/* ── Component Info Panel (right) ─────────────────────────────────── */}

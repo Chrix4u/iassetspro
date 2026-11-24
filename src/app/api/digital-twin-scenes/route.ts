@@ -41,7 +41,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
     }
 
-    const where = { twinId };
+    // Withdrawn private CAD scenes are retained for audit history but must
+    // not reappear as the installed machine's commissioned 3D scene.
+    const where = {
+      twinId,
+      isActive: true,
+      model: {
+        OR: [
+          { isActive: true },
+          { filePath: { not: { startsWith: '/api/smart-anatomy/models/' } } },
+        ],
+      },
+    };
 
     const [scenes, total] = await Promise.all([
       db.digitalTwinScene.findMany({
@@ -145,6 +156,15 @@ export async function POST(request: NextRequest) {
     }
     if (model.assetId !== twin.assetId) {
       return NextResponse.json({ success: false, error: 'Asset model does not belong to the twin asset' }, { status: 400 });
+    }
+    // A proprietary CAD upload is never an approved Digital Twin scene until
+    // its engineering source, geometry and registered-component links have
+    // passed the separate Smart Anatomy commissioning action.
+    if (model.filePath.startsWith('/api/smart-anatomy/models/') && !model.isActive) {
+      return NextResponse.json({
+        success: false,
+        error: 'Private CAD must pass engineering review before attachment to a Digital Twin scene',
+      }, { status: 409 });
     }
 
     const scene = await db.digitalTwinScene.create({

@@ -80,6 +80,7 @@ export function normalizeDigitalTwinScene(raw: unknown): DigitalTwinScene {
       return {
         id: asOptionalString(binding.id),
         meshName,
+        meshPath: asOptionalString(binding.meshPath),
         assetId,
         assetName: asOptionalString(asset?.name) ?? assetId,
         componentId: asOptionalString(binding.componentId) ?? asOptionalString(component?.id) ?? null,

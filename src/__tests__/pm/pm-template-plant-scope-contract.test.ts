@@ -56,7 +56,7 @@ describe('PM template plant scope contract', () => {
   });
 
   it('assigns AI-generated templates to the request plant', () => {
-    const createStart = aiGenerate.indexOf('const pmTemplate = await db.pmTemplate.create');
+    const createStart = aiGenerate.indexOf('const pmTemplate = await tx.pmTemplate.create');
     expect(createStart).toBeGreaterThanOrEqual(0);
     const createBlock = aiGenerate.slice(createStart, createStart + 900);
     expect(createBlock).toContain('plantId,');

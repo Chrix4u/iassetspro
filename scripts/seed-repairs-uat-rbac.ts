@@ -27,6 +27,15 @@ const { createAdapter } = require('../src/lib/create-postgres-adapter');
 const db = new PrismaClient({ adapter: createAdapter(process.env.DATABASE_URL) });
 
 const ROLE_PERMISSIONS: Record<string, string[]> = {
+  reliability_engineer: [
+    'dashboard.view', 'chat.view', 'documents.view', 'documents.download',
+    'assets.view', 'assets.view_all', 'equipment.view',
+    'assemblies.view', 'bom.view', 'parts.view', 'meters.view',
+    'maintenance_requests.view', 'work_orders.view', 'pm_schedules.view',
+    'digital_twin.view', 'digital_twin.manage',
+    'model_viewer.view', 'hotspots.view', 'reports.view',
+  ],
+
   production_operator: [
     'dashboard.view', 'chat.view',
     'documents.view', 'documents.download',
@@ -71,7 +80,8 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'notifications.view',
     'assets.view', 'assets.view_all', 'assets.create', 'assets.update',
     'assets.hierarchy', 'assets.health', 'assets.criticality',
-    'equipment.view', 'equipment.create', 'equipment.update',
+    'equipment.view',
+    'digital_twin.view', 'model_viewer.view', 'hotspots.view', 'equipment.create', 'equipment.update',
     'assemblies.view', 'assemblies.create', 'assemblies.update',
     'bom.view', 'bom.create', 'bom.update',
     'facilities.view',
@@ -119,6 +129,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'assets.view', 'assets.view_all', 'assets.update',
     'assets.health', 'assets.criticality',
     'equipment.view',
+    'digital_twin.view', 'model_viewer.view', 'hotspots.view',
     'meters.view', 'meters.read',
     'tools.view',
     'maintenance_requests.view', 'maintenance_requests.view_all',
@@ -156,6 +167,7 @@ const ROLE_PERMISSIONS: Record<string, string[]> = {
     'notifications.view',
     'assets.view', 'assets.view_own',
     'equipment.view',
+    'digital_twin.view', 'model_viewer.view', 'hotspots.view',
     'meters.view', 'meters.read',
     'tools.view', 'tools.checkout', 'tools.return',
     'maintenance_requests.view_own',
@@ -319,6 +331,7 @@ async function main() {
     ['maintenance_planner', 'pm_tasks.create'],
     ['maintenance_supervisor', 'maintenance_requests.approve'],
     ['maintenance_technician', 'work_orders.start'],
+    ['reliability_engineer', 'digital_twin.manage'],
     ['inventory_manager', 'vendors.create'],
     ['inventory_manager', 'purchase_orders.approve'],
     ['inventory_manager', 'spare_part_returns.update'],

@@ -352,6 +352,22 @@ jobs:
       - name: Generate Prisma client
         run: bunx prisma generate
 
+      # Proprietary CAD and scans require owner-only non-webroot storage.
+      # This CI directory is ephemeral, has no external network mount, and
+      # must never be confused with customer CAD evidence or an offsite backup.
+      - name: Provision private CAD storage for isolated Repairs UAT
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/iassetspro-private-cad-uat"
+          mkdir -p "$root"
+          chmod 0700 "$root"
+          echo "IASSETSPRO_CAD_STORAGE_ROOT=$root" >> "$GITHUB_ENV"
+          stat -c '%a %U' "$root"
+
+      - name: Verify owner-only CAD storage in isolated Repairs UAT
+        run: node scripts/smart-anatomy/check-private-cad-storage.mjs
+
       - name: Apply PostgreSQL baseline migration to isolated UAT database
         run: |
           bunx prisma migrate deploy
@@ -387,17 +403,14 @@ jobs:
           test -f .next/standalone/server.js
           rm build-output.tar.gz
 
-      - name: Install Playwright Chromium browser with system dependencies
-        run: |
-          set -euo pipefail
-          # GitHub-hosted Ubuntu mirrors can intermittently return HTTP 503 or time out.
-          # Preserve the hard browser gate while retrying transient APT downloads.
-          sudo tee /etc/apt/apt.conf.d/90-iassets-ci-network >/dev/null <<'APT'
-          Acquire::Retries "5";
-          Acquire::http::Timeout "45";
-          Acquire::https::Timeout "45";
-          APT
-          bunx playwright install --with-deps chromium
+      # Hosted Ubuntu runners include the Chromium shared-library baseline.
+      # Avoid an unrelated apt transaction: Ubuntu mirrors intermittently
+      # return 503 and prevent both UAT suites from starting.
+      - name: Install pinned Playwright Chromium without apt
+        env:
+          CI: 'true'
+          RUNNER_OS: Linux
+        run: bash scripts/smart-anatomy/install-ci-chromium.sh
 
       - name: Run Repairs/RWOP Playwright UAT
         run: bun run test:repairs-uat
@@ -511,8 +524,14 @@ jobs:
           test -f .next/standalone/server.js
           rm build-output.tar.gz
 
-      - name: Install Playwright Chromium browser with system dependencies
-        run: bunx playwright install --with-deps chromium
+      # Hosted Ubuntu runners include the Chromium shared-library baseline.
+      # Avoid an unrelated apt transaction: Ubuntu mirrors intermittently
+      # return 503 and prevent both UAT suites from starting.
+      - name: Install pinned Playwright Chromium without apt
+        env:
+          CI: 'true'
+          RUNNER_OS: Linux
+        run: bash scripts/smart-anatomy/install-ci-chromium.sh
 
       - name: Run platform Playwright E2E (Chromium only)
         run: bun run test:e2e --project=chromium

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin, getUserPlantId } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
-import { aiChatCompletion, aiImageGeneration } from '@/lib/ai-client';
+import { aiChatCompletion } from '@/lib/ai-client';
+import { canAccessPlant, getPlantScope } from '@/lib/plant-scope';
+import { aiAssemblyCode, aiComponentCode, aiPartCode, normalizeAiMachineCode } from '@/lib/ai-asset-codes';
 
 const logger = createLogger('api:assets:ai-generate');
 
@@ -272,28 +272,6 @@ function generateAssetTag(shortName: string, index: number): string {
   return `AI-${shortName}-${String(index).padStart(3, '0')}`;
 }
 
-function generateComponentCode(shortName: string, ssIndex: number, compIndex: number): string {
-  return `AI-${shortName}-${String(ssIndex + 1).padStart(2, '0')}-${String(compIndex + 1).padStart(2, '0')}`;
-}
-
-async function generateUniqueItemCode(): Promise<string> {
-  // Get the next sequence number
-  const lastItem = await db.inventoryItem.findFirst({
-    where: { itemCode: { startsWith: 'SP-AI-' } },
-    orderBy: { itemCode: 'desc' },
-    select: { itemCode: true },
-  });
-
-  let nextNum = 1;
-  if (lastItem) {
-    const parts = lastItem.itemCode.split('-');
-    const lastNum = parseInt(parts[parts.length - 1], 10);
-    if (!isNaN(lastNum)) nextNum = lastNum + 1;
-  }
-
-  return `SP-AI-${String(nextNum).padStart(4, '0')}`;
-}
-
 function frequencyTypeToValue(freqType: string): number {
   switch (freqType) {
     case 'daily': return 1;
@@ -363,76 +341,10 @@ function inferDiagramNodeType(componentName: string): string {
 }
 
 // ============================================================================
-// HELPER — Generate machine image with AI
-// ============================================================================
-
-async function generateMachineImage(
-  machineName: string,
-  description: string,
-  assetId: string,
-): Promise<string | null> {
-  try {
-    const prompt = `Professional industrial technical illustration of a ${machineName}. 
-${description}
-Style: Clean technical diagram style with isometric 3D perspective, labeled parts visible, 
-industrial equipment on white/light gray background, engineering blueprint quality, 
-detailed mechanical components visible, professional CAD rendering style, 
-no text overlays, no watermarks, high quality technical illustration.`;
-
-    logger.info('Generating AI machine image', { machineName });
-
-    const response = await aiImageGeneration({
-      prompt,
-      size: '1024x1024',
-    });
-
-    const imageBase64 = response.data?.[0]?.base64;
-    const imageUrl = response.data?.[0]?.url;
-
-    // Save to persistent generated-asset storage when configured.
-    const outputDir = process.env.GENERATED_ASSETS_DIR || path.join(process.cwd(), 'public', 'generated-assets');
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-
-    const filename = `${assetId}.png`;
-    const filepath = path.join(outputDir, filename);
-
-    if (imageBase64) {
-      // Direct base64 data from API
-      const buffer = Buffer.from(imageBase64, 'base64');
-      fs.writeFileSync(filepath, buffer);
-      logger.info('Machine image saved (base64)', { filepath, fileSize: buffer.length });
-    } else if (imageUrl) {
-      // URL from API — download and save
-      const imgResponse = await fetch(imageUrl);
-      if (imgResponse.ok) {
-        const arrayBuffer = await imgResponse.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        fs.writeFileSync(filepath, buffer);
-        logger.info('Machine image saved (downloaded from URL)', { filepath, fileSize: buffer.length });
-      } else {
-        logger.warn('Failed to download image from URL', { url: imageUrl, status: imgResponse.status });
-        return null;
-      }
-    } else {
-      logger.warn('No image data returned from AI');
-      return null;
-    }
-
-    return `/api/generated-assets/${filename}`;
-  } catch (imgError) {
-    const imgErr = imgError instanceof Error ? imgError : new Error(String(imgError));
-    logger.warn('Failed to generate machine image (non-fatal)', { message: imgErr.message });
-    return null;
-  }
-}
-
-// ============================================================================
 // MAIN ROUTE HANDLER
 // ============================================================================
 
-// Allow up to 5 minutes for LLM generation + image + DB writes
+// Allow bounded time for LLM analysis and atomic machine draft registration
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
@@ -457,13 +369,35 @@ export async function POST(request: NextRequest) {
 
     // --- Parse body ---
     const body = await request.json();
-    const { machineName, additionalContext, plantId: requestedPlantId, categoryId: requestedCategoryId } = body;
+    const { machineName, machineCode: requestedMachineCode, additionalContext, plantId: requestedPlantId, categoryId: requestedCategoryId, functionalLocationId } = body;
 
     if (!machineName || typeof machineName !== 'string' || machineName.trim().length === 0) {
       return NextResponse.json(
         { success: false, error: 'machineName is required and must be a non-empty string' },
         { status: 400 },
       );
+    }
+
+    if (body.acknowledgeUnverified !== true) {
+      return NextResponse.json({
+        success: false,
+        error: 'Confirm that AI suggestions are unverified drafts and require engineering approval.',
+      }, { status: 400 });
+    }
+    if (!functionalLocationId || typeof functionalLocationId !== 'string') {
+      return NextResponse.json({
+        success: false, error: 'Select the complete functional location path before generating an asset.',
+      }, { status: 400 });
+    }
+
+    // Validate the owner-specified internal code before any AI or database writes.
+    let machineCode: string | null = null;
+    try {
+      machineCode = requestedMachineCode ? normalizeAiMachineCode(requestedMachineCode, '') : null;
+    } catch (error) {
+      return NextResponse.json({
+        success: false, error: error instanceof Error ? error.message : 'Invalid machine code',
+      }, { status: 400 });
     }
 
     // --- Resolve plantId ---
@@ -476,6 +410,27 @@ export async function POST(request: NextRequest) {
         { success: false, error: 'No plant specified and user has no primary plant. Please provide a plantId.' },
         { status: 400 },
       );
+    }
+
+    const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess || !canAccessPlant(plantScope, plantId)) {
+      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
+    }
+    if (!isAdmin(session) && !hasPermission(session, 'assets.functional_locations.assign')) {
+      return NextResponse.json({ success: false, error: 'Location assignment permission required' }, { status: 403 });
+    }
+    const installation = await db.functionalLocation.findUnique({
+      where: { id: functionalLocationId },
+      include: { hierarchySystem: true, hierarchyLevel: true },
+    });
+    if (!installation || installation.status !== 'active' ||
+      !installation.hierarchySystem.isActive || !installation.hierarchyLevel.isActive ||
+      !installation.hierarchyLevel.allowAssetAssignment ||
+      installation.hierarchyLevel.hierarchySystemId !== installation.hierarchySystemId ||
+      installation.plantId !== plantId) {
+      return NextResponse.json({
+        success: false, error: 'Select an active, assignable location in the selected machine plant',
+      }, { status: 400 });
     }
 
     // Validate plant exists
@@ -518,9 +473,57 @@ export async function POST(request: NextRequest) {
     }
 
     // --- Prepare identifiers ---
-    const shortName = generateShortName(machineData.name);
-    const mainAssetTag = generateAssetTag(shortName, 1);
-    const now = new Date();
+    const shortName = generateShortName(machineName.trim()) || 'MACHINE';
+    // For automatic codes, choose the first free root. Repeating a machine
+    // name must never silently reuse AI-...-001 from an earlier asset.
+    let mainAssetTag = machineCode;
+    if (!mainAssetTag) {
+      const prefix = `AI-${shortName}-`;
+      const registered = await db.asset.findMany({
+        where: { assetTag: { startsWith: prefix } },
+        select: { assetTag: true }, take: 1001,
+      });
+      const used = new Set(registered.map(item => item.assetTag));
+      for (let next = 1; next <= 999; next++) {
+        const candidate = generateAssetTag(shortName, next);
+        if (!used.has(candidate)) { mainAssetTag = candidate; break; }
+      }
+      if (!mainAssetTag) {
+        return NextResponse.json({
+          success: false, error: 'No unused automatic machine code remains; enter a unique code.',
+        }, { status: 409 });
+      }
+    }
+
+    // Preflight the complete proposed code family so an existing code fails
+    // clearly before any machine/assembly/spare record is saved.
+    const expectedAssetCodes = [mainAssetTag];
+    const expectedPartCodes: string[] = [];
+    for (let assemblyIndex = 0; assemblyIndex < machineData.subsystems.length; assemblyIndex++) {
+      expectedAssetCodes.push(aiAssemblyCode(mainAssetTag, assemblyIndex));
+      const components = machineData.subsystems[assemblyIndex].components || [];
+      for (let componentIndex = 0; componentIndex < components.length; componentIndex++) {
+        expectedAssetCodes.push(aiComponentCode(mainAssetTag, assemblyIndex, componentIndex));
+        const spareParts = components[componentIndex].spareParts || [];
+        for (let partIndex = 0; partIndex < spareParts.length; partIndex++) {
+          expectedPartCodes.push(aiPartCode(mainAssetTag, assemblyIndex, componentIndex, partIndex));
+        }
+      }
+    }
+    const [usedAsset, usedInventory] = await Promise.all([
+      db.asset.findFirst({
+        where: { assetTag: { in: expectedAssetCodes } }, select: { assetTag: true },
+      }),
+      expectedPartCodes.length ? db.inventoryItem.findFirst({
+        where: { itemCode: { in: expectedPartCodes } }, select: { itemCode: true },
+      }) : Promise.resolve(null),
+    ]);
+    if (usedAsset || usedInventory) {
+      return NextResponse.json({
+        success: false,
+        error: `Machine code family already exists (${usedAsset?.assetTag || usedInventory?.itemCode}). Choose another machine code.`,
+      }, { status: 409 });
+    }
 
     // --- Summary counters ---
     const summary = {
@@ -541,29 +544,53 @@ export async function POST(request: NextRequest) {
     // ================================================================
     logger.info('Creating main asset', { name: machineData.name, tag: mainAssetTag });
 
-    const mainAsset = await db.asset.create({
+    // All core database records commit or roll back together. Never leave a
+    // half-created physical hierarchy, inactive PM proposal or spare draft.
+    // LLM/image generation is deliberately outside the transaction.
+    const mainAsset = await db.$transaction(async tx => {
+    const mainAsset = await tx.asset.create({
       data: {
-        name: machineData.name,
+        name: machineName.trim(),
         assetTag: mainAssetTag,
-        description: truncateText(machineData.description),
-        manufacturer: machineData.manufacturer,
-        model: machineData.model,
-        yearManufactured: now.getFullYear(),
-        condition: 'new',
-        status: 'operational',
-        criticality: machineData.criticality || 'medium',
-        specification: JSON.stringify(machineData.specification || {}),
-        purchaseCost: machineData.purchaseCost || null,
-        expectedLifeYears: machineData.expectedLifeYears || null,
-        currentValue: machineData.purchaseCost || null,
+        description: truncateText('UNVERIFIED AI DRAFT: ' + machineData.description),
+        // Manufacturer, model, year, market value and rated limits must not
+        // be invented as if taken from a real OEM nameplate or service manual.
+        manufacturer: null,
+        model: null,
+        yearManufactured: null,
+        acquisitionCondition: 'unknown',
+        condition: 'unknown',
+        status: 'standby',
+        criticality: 'medium',
+        specification: JSON.stringify({
+          aiDraft: {
+            verified: false,
+            source: 'ai_suggestion',
+            suggestedManufacturer: machineData.manufacturer,
+            suggestedModel: machineData.model,
+            suggestedCriticality: machineData.criticality,
+            suggestedSpecifications: machineData.specification || {},
+            suggestedPurchaseCost: machineData.purchaseCost || null,
+            suggestedLifeYears: machineData.expectedLifeYears || null,
+          },
+        }),
+        purchaseCost: null,
+        expectedLifeYears: null,
+        currentValue: null,
         plantId,
         categoryId,
         createdById: session.userId,
         isActive: true,
+        functionalLocationAssignments: { create: {
+          hierarchySystemId: installation.hierarchySystemId,
+          functionalLocationId: installation.id,
+          assignedById: session.userId,
+          reason: 'Selected during AI draft machine registration; engineering verification pending',
+        } },
       },
     });
 
-    logger.info('Main asset created', { assetId: mainAsset.id, assetTag: mainAssetTag });
+    logger.info('AI asset staged for atomic registration', { assetId: mainAsset.id, assetTag: mainAssetTag });
 
     // ================================================================
     // 2. CREATE SUBSYSTEMS + COMPONENTS (Asset hierarchy + BOM + Registry)
@@ -614,16 +641,23 @@ export async function POST(request: NextRequest) {
       summary.subsystems++;
 
       // Create subsystem asset (child of main asset)
-      const ssAssetTag = generateAssetTag(shortName, 2 + ssIdx);
-      const subsystemAsset = await db.asset.create({
+      const ssAssetTag = aiAssemblyCode(mainAssetTag, ssIdx);
+      const subsystemAsset = await tx.asset.create({
         data: {
           name: subsystem.name,
           assetTag: ssAssetTag,
-          description: truncateText(subsystem.description),
-          condition: 'new',
-          status: 'operational',
-          criticality: subsystem.criticality || 'medium',
-          specification: JSON.stringify({ subsystem: true }),
+          description: truncateText('UNVERIFIED AI DRAFT: ' + subsystem.description),
+          acquisitionCondition: 'unknown',
+          condition: 'unknown',
+          status: 'standby',
+          criticality: 'medium',
+          specification: JSON.stringify({
+            subsystem: true,
+            aiDraft: {
+              verified: false, source: 'ai_suggestion',
+              suggestedCriticality: subsystem.criticality,
+            },
+          }),
           plantId,
           categoryId,
           parentId: mainAsset.id,
@@ -636,10 +670,14 @@ export async function POST(request: NextRequest) {
       bomEntries.push({
         parentId: mainAsset.id,
         childAssetId: subsystemAsset.id,
-        partNumber: `BOM-${shortName}-${ssIdx + 1}`,
+        partNumber: ssAssetTag,
         quantity: 1,
         unit: 'each',
-        specification: JSON.stringify({ type: 'subsystem', description: subsystem.description }),
+        specification: JSON.stringify({
+          type: 'subsystem',
+          description: subsystem.description,
+          aiDraft: { verified: false, source: 'ai_suggestion' },
+        }),
       });
 
       // Process components within subsystem
@@ -647,19 +685,26 @@ export async function POST(request: NextRequest) {
         const component = subsystem.components[compIdx];
         summary.components++;
 
-        const compAssetTag = `${ssAssetTag}-${compIdx + 1}`;
-        const componentCode = generateComponentCode(shortName, ssIdx, compIdx);
+        const componentCode = aiComponentCode(mainAssetTag, ssIdx, compIdx);
+        const compAssetTag = componentCode;
 
         // Create component asset (child of subsystem)
-        const componentAsset = await db.asset.create({
+        const componentAsset = await tx.asset.create({
           data: {
             name: component.name,
             assetTag: compAssetTag,
-            description: truncateText(component.description),
-            condition: 'new',
-            status: 'operational',
-            criticality: component.criticality || 'medium',
-            specification: JSON.stringify(component.specification || {}),
+            description: truncateText('UNVERIFIED AI DRAFT: ' + component.description),
+            acquisitionCondition: 'unknown',
+            condition: 'unknown',
+            status: 'standby',
+            criticality: 'medium',
+            specification: JSON.stringify({
+              aiDraft: {
+                verified: false, source: 'ai_suggestion',
+                suggestedCriticality: component.criticality,
+                suggestedSpecifications: component.specification || {},
+              },
+            }),
             plantId,
             categoryId,
             parentId: subsystemAsset.id,
@@ -672,10 +717,16 @@ export async function POST(request: NextRequest) {
         bomEntries.push({
           parentId: subsystemAsset.id,
           childAssetId: componentAsset.id,
-          partNumber: `BOM-${componentCode}`,
+          partNumber: componentCode,
           quantity: 1,
           unit: 'each',
-          specification: JSON.stringify(component.specification || {}),
+          specification: JSON.stringify({
+            aiDraft: {
+              verified: false, source: 'ai_suggestion',
+              suggestedSpecifications: component.specification || {},
+              suggestedCriticality: component.criticality,
+            },
+          }),
         });
 
         // Component registry entry
@@ -684,30 +735,50 @@ export async function POST(request: NextRequest) {
           name: component.name,
           description: component.description,
           componentType: 'component',
-          criticality: component.criticality || 'medium',
-          specification: JSON.stringify(component.specification || {}),
+          criticality: 'medium',
+          specification: JSON.stringify({
+            aiDraft: {
+              verified: false, source: 'ai_suggestion',
+              suggestedCriticality: component.criticality,
+              suggestedSpecifications: component.specification || {},
+            },
+          }),
           assetId: mainAsset.id,
           sortOrder: (ssIdx * 100) + compIdx,
           expectedLifeHours: null,
         });
 
         // Collect spare parts (deduplicate by code)
-        for (const sparePart of component.spareParts || []) {
-          if (!usedSpareCodes.has(sparePart.code)) {
-            usedSpareCodes.add(sparePart.code);
+        for (const [partIdx, sparePart] of (component.spareParts || []).entries()) {
+          const partCode = aiPartCode(mainAssetTag, ssIdx, compIdx, partIdx);
+          if (!usedSpareCodes.has(partCode)) {
+            usedSpareCodes.add(partCode);
             inventoryItemsToCreate.push({
-              itemCode: await generateUniqueItemCode(),
+              itemCode: partCode,
               name: sparePart.name,
-              description: `${sparePart.name} - spare part for ${component.name}`,
+              description: `UNVERIFIED AI DRAFT: proposed spare part for ${component.name}. Engineer/storekeeper must confirm OEM code, unit, and cost.`,
               category: sparePart.category || 'spare_part',
               unitOfMeasure: sparePart.unit || 'each',
               currentStock: 0,
-              minStockLevel: sparePart.minStock || 2,
-              maxStockLevel: sparePart.maxStock || 6,
-              unitCost: sparePart.unitCost || 0,
-              supplier: sparePart.supplier || '',
+              minStockLevel: 0,
+              maxStockLevel: 0,
+              unitCost: 0,
+              supplier: '',
               plantId,
-              specification: JSON.stringify(sparePart.specification || {}),
+              specification: JSON.stringify({
+                aiDraft: {
+                  verified: false,
+                  source: 'ai_suggestion',
+                  suggestedManufacturerPartCode: sparePart.code,
+                  suggestedUnitCost: sparePart.unitCost,
+                  suggestedSupplier: sparePart.supplier,
+                  suggestedStockLimits: {
+                    minimum: sparePart.minStock,
+                    maximum: sparePart.maxStock,
+                  },
+                  suggestedSpecification: sparePart.specification || {},
+                },
+              }),
               createdById: session.userId,
             });
           }
@@ -719,7 +790,7 @@ export async function POST(request: NextRequest) {
     // 3. BATCH CREATE BOM ENTRIES
     // ================================================================
     if (bomEntries.length > 0) {
-      await db.billOfMaterial.createMany({
+      await tx.billOfMaterial.createMany({
         data: bomEntries.map(entry => ({
           parentId: entry.parentId,
           childAssetId: entry.childAssetId,
@@ -727,10 +798,12 @@ export async function POST(request: NextRequest) {
           quantity: entry.quantity,
           unit: entry.unit,
           specification: entry.specification,
-          status: 'active',
-          revision: 'A',
+          // AI guesses cannot enter the released engineering bill of
+          // materials or parts issuance before a maintainer approves them.
+          status: 'under_review',
+          revision: 'DRAFT-AI',
         })),
-        skipDuplicates: true,
+        skipDuplicates: false,
       });
       summary.bomEntries = bomEntries.length;
     }
@@ -739,7 +812,7 @@ export async function POST(request: NextRequest) {
     // 4. BATCH CREATE COMPONENT REGISTRY ENTRIES
     // ================================================================
     if (componentRegistryEntries.length > 0) {
-      await db.componentRegistry.createMany({
+      await tx.componentRegistry.createMany({
         data: componentRegistryEntries.map(entry => ({
           componentCode: entry.componentCode,
           name: entry.name,
@@ -750,11 +823,12 @@ export async function POST(request: NextRequest) {
           assetId: entry.assetId,
           sortOrder: entry.sortOrder,
           expectedLifeHours: entry.expectedLifeHours,
-          lifecycleStatus: 'operational',
+          lifecycleStatus: 'uncommissioned',
           operatingHours: 0,
           healthScore: 100,
+          notes: 'Unverified AI draft component — confirm exact OEM identity before PM/WO use.',
         })),
-        skipDuplicates: true,
+        skipDuplicates: false,
       });
       summary.componentRegistry = componentRegistryEntries.length;
     }
@@ -763,7 +837,7 @@ export async function POST(request: NextRequest) {
     // 5. BATCH CREATE INVENTORY ITEMS
     // ================================================================
     if (inventoryItemsToCreate.length > 0) {
-      await db.inventoryItem.createMany({
+      await tx.inventoryItem.createMany({
         data: inventoryItemsToCreate.map(item => ({
           itemCode: item.itemCode,
           name: item.name,
@@ -779,9 +853,10 @@ export async function POST(request: NextRequest) {
           specification: item.specification,
           imageUrls: '[]',
           createdById: item.createdById,
-          isActive: true,
+          // Never expose hypothetical AI spare parts to purchasing or issuance until approved.
+          isActive: false,
         })),
-        skipDuplicates: true,
+        skipDuplicates: false,
       });
       summary.inventoryItems = inventoryItemsToCreate.length;
     }
@@ -793,17 +868,17 @@ export async function POST(request: NextRequest) {
       summary.pmTemplates++;
 
       // Create PM template
-      const pmTemplate = await db.pmTemplate.create({
+      const pmTemplate = await tx.pmTemplate.create({
         data: {
           title: template.title,
-          description: `AI-generated PM template for ${machineData.name}: ${template.title}`,
+          description: `UNVERIFIED AI proposal — engineer and planner approval required: ${template.title}`,
           type: template.type || 'preventive',
           category: template.category || 'mechanical',
           estimatedDuration: template.estimatedDuration || 2.0,
           priority: template.priority || 'medium',
           requiredSkills: JSON.stringify([]),
           requiredTools: JSON.stringify([]),
-          isActive: true,
+          isActive: false,
           createdById: session.userId,
           plantId,
         },
@@ -814,7 +889,7 @@ export async function POST(request: NextRequest) {
         const task = template.tasks[taskIdx];
         summary.pmTasks++;
 
-        await db.pmTemplateTask.create({
+        await tx.pmTemplateTask.create({
           data: {
             templateId: pmTemplate.id,
             taskNumber: taskIdx + 1,
@@ -832,18 +907,21 @@ export async function POST(request: NextRequest) {
       const frequencyType = template.frequencyType || 'monthly';
       const frequencyValue = frequencyTypeToValue(frequencyType);
 
-      await db.pmSchedule.create({
+      await tx.pmSchedule.create({
         data: {
           title: `${template.title} - ${machineData.name}`,
-          description: `Auto-generated schedule from AI template: ${template.title}`,
+          description: `UNVERIFIED AI schedule proposal. Planner must confirm task, interval, units, OEM evidence and next due date before activation.`,
           assetId: mainAsset.id,
-          frequencyType,
+          // Canonical PM frequency: calendar/time or meter/usage only.
+          // LLM suggestions are converted to inactive calendar proposals here.
+          frequencyType: 'time_day',
+          frequencyUnit: 'days',
           frequencyValue,
-          nextDueDate: new Date(now.getTime() + frequencyValue * 24 * 60 * 60 * 1000),
+          nextDueDate: null,
           estimatedDuration: template.estimatedDuration || 2.0,
           priority: template.priority || 'medium',
-          isActive: true,
-          autoGenerateWO: true,
+          isActive: false,
+          autoGenerateWO: false,
           leadDays: frequencyType === 'daily' ? 0 : frequencyType === 'weekly' ? 1 : 3,
           templateId: pmTemplate.id,
           createdById: session.userId,
@@ -852,16 +930,43 @@ export async function POST(request: NextRequest) {
       summary.pmSchedules++;
     }
 
+      // An audit record must commit with the machine and its proposed
+      // BOM, inventory and PM data, never as a best-effort later write.
+      await tx.auditLog.create({
+        data: {
+          userId: session.userId,
+          action: 'create',
+          entityType: 'asset',
+          entityId: mainAsset.id,
+          newValues: JSON.stringify({
+            source: 'ai-generate',
+            verificationStatus: 'unverified_draft',
+            machineName: machineName.trim(),
+            functionalLocationId: installation.id,
+            assetTag: mainAssetTag,
+            codeFormat: 'machine-A##-C##-P##',
+            subsystems: summary.subsystems,
+            components: summary.components,
+            inventoryItems: summary.inventoryItems,
+            pmTemplates: summary.pmTemplates,
+            pmSchedules: summary.pmSchedules,
+          }),
+        },
+      });
+      return mainAsset;
+    }, { timeout: 90000, maxWait: 10000 });
+
     // ================================================================
     // 7. CREATE DIGITAL TWIN
     // ================================================================
     try {
       // Build twin parameters from machine specification + subsystem info
       const twinParameters: Record<string, unknown> = {
-        ...machineData.specification,
-        manufacturer: machineData.manufacturer,
-        model: machineData.model,
-        criticality: machineData.criticality,
+        provenance: { verified: false, source: 'ai_suggestion', isPhysicalTwin: false },
+        candidateSpecifications: machineData.specification,
+        suggestedManufacturer: machineData.manufacturer,
+        suggestedModel: machineData.model,
+        suggestedCriticality: machineData.criticality,
         subsystems: machineData.subsystems.map(ss => ({
           name: ss.name,
           criticality: ss.criticality,
@@ -890,13 +995,13 @@ export async function POST(request: NextRequest) {
         data: {
           assetId: mainAsset.id,
           name: `Digital Twin - ${machineData.name}`,
-          description: `AI-generated digital twin for ${machineData.name}. Covers ${machineData.subsystems.length} subsystems with ${summary.components} tracked components.`,
+          description: `UNVERIFIED AI schematic for ${machineData.name}; not a live or OEM-certified digital twin. Covers ${machineData.subsystems.length} proposed subsystems and ${summary.components} proposed components.`,
           type: twinType,
           parameters: JSON.stringify(twinParameters),
           connections: JSON.stringify(twinConnections),
-          healthScore: 100,
+          healthScore: 0,
           syncInterval: '5min',
-          isActive: true,
+          isActive: false,
           createdById: session.userId,
         },
       });
@@ -928,14 +1033,16 @@ export async function POST(request: NextRequest) {
             assetType: 'default',
             assetId: mainAsset.id,
             assetTag: mainAssetTag,
-            status: 'operational',
+            status: 'unverified',
             criticality: machineData.criticality,
-            health: 100,
+            provenance: 'ai_suggestion',
+            health: null,
+            verified: false,
             parameters: [
               { name: 'Subsystems', value: String(machineData.subsystems.length), unit: '' },
               { name: 'Components', value: String(summary.components), unit: '' },
               { name: 'PM Templates', value: String(machineData.pmTemplates.length), unit: '' },
-              { name: 'Spare Parts', value: String(inventoryItemsToCreate.length), unit: '' },
+              { name: 'Spare Parts', value: String(summary.inventoryItems), unit: '' },
             ],
           },
         },
@@ -962,9 +1069,11 @@ export async function POST(request: NextRequest) {
           data: {
             label: subsystem.name,
             assetType: 'default',
-            status: 'operational',
+            status: 'unverified',
             criticality: subsystem.criticality,
-            health: 100,
+            verified: false,
+            provenance: 'ai_suggestion',
+            health: null,
             parameters: [
               { name: 'Components', value: String(subsystem.components?.length || 0), unit: '' },
             ],
@@ -996,70 +1105,72 @@ export async function POST(request: NextRequest) {
           const nodeData: Record<string, unknown> = {
             label: component.name,
             criticality: component.criticality,
+            verified: false,
+            provenance: 'ai_suggestion',
           };
 
           // Add type-specific data
           switch (nodeType) {
             case 'motorNode':
-              nodeData.status = 'stopped';
-              nodeData.powerRating = 15;
-              nodeData.rpm = 1500;
+              nodeData.status = 'unverified';
+              nodeData.powerRating = null;
+              nodeData.rpm = null;
               break;
             case 'pumpNode':
-              nodeData.pumpType = 'centrifugal';
-              nodeData.status = 'stopped';
+              nodeData.pumpType = 'unverified';
+              nodeData.status = 'unverified';
               break;
             case 'valveNode':
-              nodeData.state = 'closed';
-              nodeData.valveType = 'isolation';
+              nodeData.state = 'unknown';
+              nodeData.valveType = 'unverified';
               break;
             case 'sensorNode':
               nodeData.parameter = component.description?.slice(0, 40) || 'Measurement';
               nodeData.value = 0;
               nodeData.unit = '';
-              nodeData.min = 0;
-              nodeData.max = 100;
-              nodeData.status = 'normal';
+              nodeData.min = null;
+              nodeData.max = null;
+              nodeData.status = 'unverified';
               break;
             case 'pipeNode':
-              nodeData.diameter = '100';
-              nodeData.material = 'CS';
-              nodeData.flowDirection = 'forward';
+              nodeData.diameter = null;
+              nodeData.material = 'unverified';
+              nodeData.flowDirection = 'unknown';
               break;
             case 'tankNode':
-              nodeData.fillLevel = 0;
-              nodeData.capacity = 500;
-              nodeData.levelStatus = 'normal';
+              nodeData.fillLevel = null;
+              nodeData.capacity = null;
+              nodeData.levelStatus = 'unverified';
               break;
             case 'controlNode':
-              nodeData.controllerType = 'PLC';
-              nodeData.ioCount = { in: 8, out: 4 };
-              nodeData.scanRate = 100;
-              nodeData.status = 'running';
+              nodeData.controllerType = 'unverified';
+              nodeData.ioCount = null;
+              nodeData.scanRate = null;
+              nodeData.status = 'unverified';
               break;
             case 'electricalNode':
-              nodeData.equipType = 'switchgear';
-              nodeData.status = 'energized';
+              nodeData.equipType = 'unverified';
+              nodeData.status = 'unverified';
               break;
             case 'heatExchangerNode':
-              nodeData.exchangerType = 'shell_tube';
-              nodeData.status = 'operational';
+              nodeData.exchangerType = 'unverified';
+              nodeData.status = 'unverified';
               break;
             case 'vesselNode':
-              nodeData.vesselType = 'separator';
-              nodeData.status = 'operational';
+              nodeData.vesselType = 'unverified';
+              nodeData.status = 'unverified';
               break;
             case 'instrumentNode':
               nodeData.tag = `IT-${String(ssIdx + 1).padStart(2, '0')}${String(compIdx + 1).padStart(2, '0')}`;
-              nodeData.measureType = 'Process';
+              nodeData.measureType = 'unverified';
               nodeData.value = null;
               nodeData.unit = '';
-              nodeData.status = 'normal';
+              nodeData.status = 'unverified';
               break;
             default: // assetNode
               nodeData.assetType = 'default';
-              nodeData.status = 'operational';
-              nodeData.health = 100;
+              nodeData.status = 'unverified';
+              nodeData.health = null;
               break;
           }
 
@@ -1090,13 +1201,15 @@ export async function POST(request: NextRequest) {
       await db.systemDiagram.create({
         data: {
           plantId,
+          assetId: mainAsset.id,
           name: `System Diagram - ${machineData.name}`,
-          description: `AI-generated comprehensive system diagram for ${machineData.name}. Shows ${diagramNodes.length} nodes (1 machine + ${ssCount} subsystems + ${summary.components} components) with ${diagramEdges.length} connections. Each node is labeled and zoomable. Components use specialized node types (motors, pumps, valves, sensors, etc.) for visual clarity.`,
+          description: `UNVERIFIED ILLUSTRATIVE SYSTEM DIAGRAM (NOT OEM CAD) for ${machineData.name}. Shows ${diagramNodes.length} nodes (1 machine + ${ssCount} subsystems + ${summary.components} components) with ${diagramEdges.length} connections. Each node is labeled and zoomable. Components use specialized node types (motors, pumps, valves, sensors, etc.) for visual clarity.`,
           type: 'process',
           nodes: JSON.stringify(diagramNodes),
           edges: JSON.stringify(diagramEdges),
           viewport: JSON.stringify({ x: 0, y: 0, zoom }),
-          isActive: true,
+          // Only engineer-reviewed diagrams may be published plant-wide.
+          isActive: false,
           createdById: session.userId,
         },
       });
@@ -1106,53 +1219,10 @@ export async function POST(request: NextRequest) {
       logger.warn('Failed to create system diagram (non-fatal)', { message: diagramErr.message });
     }
 
-    // ================================================================
-    // 9. GENERATE AI MACHINE IMAGE
-    // ================================================================
-    let generatedImageUrl: string | null = null;
-    try {
-      generatedImageUrl = await generateMachineImage(
-        machineData.name,
-        machineData.description,
-        mainAsset.id,
-      );
-
-      if (generatedImageUrl) {
-        // Update the asset with the image URL
-        await db.asset.update({
-          where: { id: mainAsset.id },
-          data: { imageUrl: generatedImageUrl },
-        });
-        logger.info('Asset image URL updated', { assetId: mainAsset.id, imageUrl: generatedImageUrl });
-      }
-    } catch {
-      // Non-fatal - image generation is a nice-to-have
-    }
-
-    // ================================================================
-    // 10. CREATE AUDIT LOG
-    // ================================================================
-    try {
-      await db.auditLog.create({
-        data: {
-          userId: session.userId,
-          action: 'create',
-          entityType: 'asset',
-          entityId: mainAsset.id,
-          newValues: JSON.stringify({
-            source: 'ai-generate',
-            machineName: machineData.name,
-            assetTag: mainAssetTag,
-            subsystems: summary.subsystems,
-            components: summary.components,
-            inventoryItems: summary.inventoryItems,
-            pmTemplates: summary.pmTemplates,
-          }),
-        },
-      });
-    } catch {
-      // Non-fatal
-    }
+    // Machine imagery must be actual, authorized site/OEM photos. Do not
+    // auto-generate an AI illustration at registration, charge a paid image
+    // provider or set asset.imageUrl to a fictional picture of this machine.
+    // Real photos can be uploaded from six elevations in Smart Anatomy.
 
     // ================================================================
     // DONE — Return response
@@ -1182,7 +1252,7 @@ export async function POST(request: NextRequest) {
             plantId: mainAsset.plantId,
             categoryId: mainAsset.categoryId,
             specification: mainAsset.specification,
-            imageUrl: generatedImageUrl,
+            imageUrl: mainAsset.imageUrl,
             createdAt: mainAsset.createdAt,
           },
           summary,

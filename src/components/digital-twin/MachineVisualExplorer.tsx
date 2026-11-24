@@ -25,6 +25,7 @@ import type { AssetMeshBinding } from './InteractiveMesh';
 import type { ImportedAnatomyMesh } from './anatomyBindings';
 import { suggestAnatomyMappings } from './anatomyMappingSuggestions';
 import { wrapSchematicLabel } from '@/lib/machine-schematic-label';
+import { buildSchematicLevels } from '@/lib/machine-schematic-levels';
 import { MACHINE_PHOTO_VIEWPOINTS, machinePhotoViewLabel, type MachinePhotoViewpoint } from '@/lib/machine-photo-views';
 
 type MachineComponent = {
@@ -238,23 +239,9 @@ function EngineeringSchematic({
     onWheel: React.WheelEventHandler<HTMLDivElement>;
   };
 }) {
-  const layout = useMemo(() => {
-    const byParent = new Map<string, MachineComponent[]>();
-    const roots: MachineComponent[] = [];
-    components.forEach((component) => {
-      if (!component.parentId) roots.push(component);
-      else byParent.set(component.parentId, [...(byParent.get(component.parentId) || []), component]);
-    });
-    const rows: MachineComponent[][] = [];
-    let current = roots;
-    let guard = 0;
-    while (current.length && guard < 8) {
-      rows.push(current);
-      current = current.flatMap((item) => byParent.get(item.id) || []);
-      guard += 1;
-    }
-    return rows;
-  }, [components]);
+  // Traverse all registered part/sub-part levels without an arbitrary depth cap.
+  // The pure helper deduplicates IDs and guards against malformed parent cycles.
+  const layout = useMemo(() => buildSchematicLevels(components), [components]);
 
   const rootNameLines = wrapSchematicLabel(asset.name, 28);
   const rootCodeLines = wrapSchematicLabel(asset.assetTag, 36);

@@ -9,9 +9,15 @@ describe('asset register structured Functional Location presentation', () => {
     expect(assetPages).toContain('a.functionalLocation?.path?.toLowerCase().includes(q)');
   });
 
-  it('prefers the coded structured path in the register location column with legacy fallback', () => {
-    expect(assetPages).toContain('Installed At');
-    expect(assetPages).toContain("a.functionalLocation?.pathCode || a.location || '-'");
+  it('keeps the long location hierarchy out of the list table without removing the assigned path', () => {
+    const listStart = assetPages.indexOf('<Card className="border-0 shadow-sm dark:bg-card overflow-hidden">');
+    const listEnd = assetPages.indexOf('<ResponsiveDialog', listStart);
+    const list = assetPages.slice(listStart, listEnd);
+    expect(listStart).toBeGreaterThan(-1);
+    expect(listEnd).toBeGreaterThan(listStart);
+    expect(list).not.toContain('<TableHead className="hidden lg:table-cell">Installed At</TableHead>');
+    expect(list).not.toContain('a.functionalLocation?.pathCode');
+    expect(assetPages).toContain('functionalLocationId');
   });
 
   it('exports the filtered register with Location Code and Asset Path under the asset export permission', () => {

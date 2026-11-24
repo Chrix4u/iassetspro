@@ -370,7 +370,6 @@ export function AssetsPage() {
                 <TableHead>Asset Tag</TableHead>
                 <TableHead>Name</TableHead>
                 <TableHead className="hidden md:table-cell">Category</TableHead>
-                <TableHead className="hidden lg:table-cell">Installed At</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="hidden md:table-cell">Criticality</TableHead>
                 <TableHead className="hidden xl:table-cell">Condition</TableHead>
@@ -380,13 +379,12 @@ export function AssetsPage() {
             </TableHeader>
             <TableBody>
               {filteredAssets.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="h-48"><EmptyState icon={Building2} title="No assets found" description="Try adjusting your filters." /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={8} className="h-48"><EmptyState icon={Building2} title="No assets found" description="Try adjusting your filters." /></TableCell></TableRow>
               ) : filteredAssets.map(a => (
                 <TableRow key={a.id}>
                   <TableCell className="font-mono text-xs">{a.assetTag}</TableCell>
                   <TableCell className="font-medium text-sm">{a.name}</TableCell>
                   <TableCell className="text-sm hidden md:table-cell">{a.category?.name || '-'}</TableCell>
-                  <TableCell className="text-sm hidden lg:table-cell">{a.functionalLocation?.pathCode || a.location || '-'}</TableCell>
                   <TableCell><Badge variant="outline" className={`text-[10px] ${statusColors[a.status] || ''}`}>{(a.status || '').replace(/_/g, ' ')}</Badge></TableCell>
                   <TableCell className="hidden md:table-cell"><Badge variant="outline" className={`text-[10px] ${criticalityColors[a.criticality] || ''}`}>{(a.criticality || '').toUpperCase()}</Badge></TableCell>
                   <TableCell className="text-xs hidden xl:table-cell capitalize">{a.acquisitionCondition || '-'}</TableCell>

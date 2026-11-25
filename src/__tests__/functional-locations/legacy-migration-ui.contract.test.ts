@@ -46,12 +46,14 @@ describe('legacy functional-location migration UI', () => {
     expect(dialog).toContain('Enter your company name to build the migration preview');
   });
 
-  it('uses genuinely wide responsive dialogs for migration and hierarchy authoring', () => {
+  it('keeps the migration wide and hierarchy authoring compact with a fixed footer', () => {
     const dialog = read('src/components/assets/LegacyLocationMigrationDialog.tsx');
     const page = read('src/components/modules/FunctionalLocationHierarchyPage.tsx');
     expect(dialog).toContain('sm:max-w-6xl');
     expect(dialog).toContain('xl:max-w-7xl');
-    expect(page).toContain('sm:max-w-6xl');
-    expect(page).toContain('xl:max-w-7xl');
+    expect(page).toContain("width: 'calc(100vw - 2rem)', maxWidth: 760, maxHeight: 'calc(100dvh - 2rem)'");
+    expect(page).toContain('data-testid="hierarchy-system-body" className="min-h-0 flex-1');
+    expect(page).toContain('data-testid="hierarchy-system-footer" className="shrink-0');
+    expect(page).not.toContain('sm:max-w-6xl');
   });
 });

@@ -601,7 +601,7 @@ export default function FunctionalLocationHierarchyPage() {
       )}
 
       <Dialog open={systemDialogOpen} onOpenChange={setSystemDialogOpen}>
-        <DialogContent data-testid="hierarchy-system-dialog" className="flex max-h-[calc(100dvh-2rem)] min-h-0 w-full max-w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-[760px] sm:p-0">
+        <DialogContent data-testid="hierarchy-system-dialog" style={{ width: 'calc(100vw - 2rem)', maxWidth: 760, maxHeight: 'calc(100dvh - 2rem)' }} className="flex min-h-0 flex-col gap-0 overflow-hidden p-0 sm:p-0">
           <DialogHeader className="shrink-0 border-b px-4 py-3 pr-10 sm:px-5 sm:pr-10"><DialogTitle>Build hierarchy system</DialogTitle><DialogDescription>Define the labels and Location Code rules your company actually uses. You are not limited to Plant / Department / Area.</DialogDescription></DialogHeader>
           <div data-testid="hierarchy-system-body" className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
             <div className="grid gap-3 sm:grid-cols-2"><div><Label>Name</Label><Input className="mt-1.5" value={systemForm.name} onChange={event => setSystemForm(current => ({ ...current, name: event.target.value }))} placeholder="e.g. Primary Plant Structure" /></div><div><Label>System code</Label><Input className="mt-1.5 font-mono" value={systemForm.code} onChange={event => setSystemForm(current => ({ ...current, code: event.target.value.toUpperCase() }))} placeholder="PRIMARY" /></div></div>

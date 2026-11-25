@@ -51,7 +51,7 @@ describe('legacy functional-location migration UI', () => {
     const page = read('src/components/modules/FunctionalLocationHierarchyPage.tsx');
     expect(dialog).toContain('sm:max-w-6xl');
     expect(dialog).toContain('xl:max-w-7xl');
-    expect(page).toContain('sm:max-w-[760px]');
+    expect(page).toContain("width: 'calc(100vw - 2rem)', maxWidth: 760, maxHeight: 'calc(100dvh - 2rem)'");
     expect(page).toContain('data-testid="hierarchy-system-body" className="min-h-0 flex-1');
     expect(page).toContain('data-testid="hierarchy-system-footer" className="shrink-0');
     expect(page).not.toContain('sm:max-w-6xl');

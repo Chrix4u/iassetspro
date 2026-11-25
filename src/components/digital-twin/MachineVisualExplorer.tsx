@@ -1265,6 +1265,7 @@ export function MachineVisualExplorer({
                     bindings={privateBindings}
                     height={selectionMode ? '480px' : '620px'}
                     showSceneTree
+                    dockSceneTree
                     showInfoPanel={false}
                     onComponentSelect={handle3DComponentSelect}
                     onAnatomySelection={onAnatomySelection}
@@ -1285,6 +1286,7 @@ export function MachineVisualExplorer({
                     assetId={asset.id}
                     height={selectionMode ? '480px' : '620px'}
                     showSceneTree
+                    dockSceneTree
                     showInfoPanel={false}
                     onComponentSelect={handle3DComponentSelect}
                     onAnatomySelection={onAnatomySelection}
@@ -1323,6 +1325,7 @@ export function MachineVisualExplorer({
                     bindings={[]}
                     height={selectionMode ? '480px' : '620px'}
                     showSceneTree
+                    dockSceneTree
                     showInfoPanel={false}
                   />
                   <p className="text-[11px] text-amber-800 dark:text-amber-200">

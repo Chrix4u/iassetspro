@@ -68,6 +68,8 @@ export interface TwinToolbarProps {
   onViewModeChange?: (mode: '3d' | '2d-front' | '2d-top' | '2d-side') => void;
   /** Whether the left scene tree panel is open (shifts toolbar right) */
   isTreeOpen?: boolean;
+  /** Keep embedded viewer controls in their own wrapping header. */
+  inlineLayout?: boolean;
   /** Exact number of actual meshes in the imported model; single-mesh files cannot explode. */
   anatomyGroupCount?: number;
   /** Surface scans may not explode their captured exterior into OEM parts. */
@@ -317,6 +319,7 @@ export function TwinToolbar({
   viewMode = '3d',
   onViewModeChange,
   isTreeOpen = false,
+  inlineLayout = false,
   anatomyGroupCount,
   allowExplosion=true,
   isIllustrativeDemo = false,
@@ -350,10 +353,10 @@ export function TwinToolbar({
 
   return (
     <div
-      className={`absolute top-3 z-30 transition-all duration-300 ${isTreeOpen ? 'left-[calc(50%+140px)]' : 'left-1/2'} -translate-x-1/2`}
+      className={inlineLayout ? "relative z-30 min-w-0 shrink-0" : `absolute top-3 z-30 transition-all duration-300 ${isTreeOpen ? 'left-[calc(50%+140px)]' : 'left-1/2'} -translate-x-1/2`}
     >
       <div
-        className="flex items-center gap-0.5 px-2 py-1.5 rounded-xl shadow-2xl"
+        className={inlineLayout ? "flex min-w-0 flex-wrap items-center justify-center gap-0.5 px-1 py-1" : "flex items-center gap-0.5 px-2 py-1.5 rounded-xl shadow-2xl"}
         style={{
           background: 'rgba(15,15,25,0.85)',
           border: '1px solid rgba(148,163,184,0.12)',

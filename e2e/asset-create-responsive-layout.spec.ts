@@ -20,6 +20,14 @@ test('isolated UAT: machine creation form opens wider and aligns fields on deskt
   await page.reload();
   await page.goto('/#/assets-machines');
   await expect(page.getByRole('heading', { name: 'Asset Register' })).toBeVisible({ timeout: 30_000 });
+  // Location breadcrumbs belong in asset details, not the compact register.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const registerTable = page.getByRole('table').filter({ has: page.getByRole('columnheader', { name: 'Asset Tag', exact: true }) });
+  await expect(registerTable).toHaveCount(1);
+  await expect(registerTable.getByRole('columnheader')).toHaveText([
+    'Asset Tag', 'Name', 'Category', 'Status', 'Criticality', 'Condition', 'Health', 'Actions',
+  ]);
+  await expect(registerTable.getByRole('columnheader', { name: /location|path/i })).toHaveCount(0);
   await page.getByRole('button', { name: 'Add Asset', exact: true }).click();
 
   const form = page.getByTestId('asset-create-form');

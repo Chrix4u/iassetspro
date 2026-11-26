@@ -215,10 +215,7 @@ for (const [phase, route, heading] of pages) {
       await page.setViewportSize({width,height});
       await page.goto('/#/'+route);
       const main=page.getByRole('main');
-      // The dashboard's main heading is deliberately personalized, unlike its navigation label.
-      const actualHeading = route==='dashboard' ? /^Welcome back,\s+\S/ : heading;
-      await expect(main.getByRole('heading',{name:actualHeading,exact:true}).first()).toBeVisible({timeout:25_000});
-      if(route==='dashboard')await expect(main.getByText('Operations Dashboard',{exact:true})).toBeVisible();
+      await expect(main.getByRole('heading',{name:heading,exact:true}).first()).toBeVisible({timeout:25_000});
       await expect(page).toHaveURL(new RegExp('#/'+route+'$'));
       await expect(page.getByText(/Something went wrong|Page failed to load|Application Error/i)).toHaveCount(0);
       // Capture the seeded rendered page, including its real tables/forms.

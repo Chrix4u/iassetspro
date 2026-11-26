@@ -201,10 +201,10 @@ export default function RepairDetailReportPage() {
             {plants.length > 0 && (
               <div className="min-w-0 space-y-1">
                 <Label className="text-xs">Plant</Label>
-                <Select value={plantId} onValueChange={setPlantId}>
+                <Select value={plantId || 'all'} onValueChange={value => setPlantId(value === 'all' ? '' : value)}>
                   <SelectTrigger className="w-full"><SelectValue placeholder="All Plants" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Plants</SelectItem>
+                    <SelectItem value="all">All Plants</SelectItem>
                     {plants.map((p: any) => (
                       <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                     ))}

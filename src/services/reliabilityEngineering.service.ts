@@ -183,7 +183,7 @@ export const reliabilityEngineeringService = {
         createdBy: { select: { id: true, fullName: true, username: true } },
         records: {
           take: 10,
-          orderBy: { createdAt: 'desc' },
+          orderBy: { detectedAt: 'desc' },
           include: {
             component: { select: { id: true, name: true, componentCode: true } },
             asset: { select: { id: true, name: true, assetTag: true } },
@@ -459,11 +459,13 @@ export const reliabilityEngineeringService = {
       mtbf = totalHours / (failures.length - 1);
 
       // Reliability at intervals
+      const fittedScale = scale;
+      const fittedShape = shape;
       reliabilityAtIntervals = [100, 500, 1000, 2000, 5000, 10000].map(
         (hours) => ({
           hours,
           reliability: Math.round(
-            Math.exp(-Math.pow(hours / scale, shape)) * 10000
+            Math.exp(-Math.pow(hours / fittedScale, fittedShape)) * 10000
           ) / 100,
         })
       );
@@ -857,21 +859,20 @@ export const reliabilityEngineeringService = {
 
   // ── ASSET CRITICALITY RANKING ─────────────────────────────────────────────
 
-  async getAssetCriticalityRanking(plantId?: string) {
+  async getAssetCriticalityRanking(plantId?: string, permittedPlantFilter: Record<string, unknown> = {}) {
     const timer = log.timer('getAssetCriticalityRanking');
 
-    const where: Record<string, unknown> = { isActive: true };
+    const where: Record<string, unknown> = { isActive: true, ...permittedPlantFilter };
     if (plantId) where.plantId = plantId;
 
     const assets = await db.asset.findMany({
       where,
       select: {
         id: true, name: true, assetTag: true, criticality: true,
-        status: true, healthScore: true, plantId: true,
+        status: true, condition: true, plantId: true,
         _count: {
           select: {
             failureRecords: true,
-            workOrders: true,
             predictiveModels: true,
             iotDevices: true,
           },
@@ -899,7 +900,9 @@ export const reliabilityEngineeringService = {
         score += criticalityWeights[asset.criticality] || 30;
 
         // Factor 2: Health score inverse (0-25 pts)
-        const healthScore = asset.healthScore ?? 50;
+        // No measured health score exists on Asset; expose an explicit condition-derived proxy.
+        const healthByCondition: Record<string, number> = { new: 100, good: 85, fair: 60, poor: 30, out_of_service: 0 };
+        const healthScore = healthByCondition[asset.condition] ?? 50;
         score += Math.round((100 - healthScore) * 0.25);
 
         // Factor 3: Failure frequency — weighted by recency (0-20 pts)
@@ -912,9 +915,11 @@ export const reliabilityEngineeringService = {
         score += Math.min(20, recentFailures * 5);
 
         // Factor 4: Open work orders (0-10 pts)
+        const totalWorkOrders = await db.workOrder.count({ where: { assetId: asset.id, plantId: asset.plantId } });
         const openWOs = await db.workOrder.count({
           where: {
             assetId: asset.id,
+            plantId: asset.plantId,
             status: { in: ['open', 'in_progress', 'assigned', 'waiting_parts'] },
           },
         });
@@ -947,7 +952,8 @@ export const reliabilityEngineeringService = {
           healthScore,
           status: asset.status,
           totalFailures: asset._count.failureRecords,
-          totalWorkOrders: asset._count.workOrders,
+          totalWorkOrders,
+          healthScoreSource: 'condition_estimate',
           openWorkOrders: openWOs,
           recentFailures,
           activeAlerts,

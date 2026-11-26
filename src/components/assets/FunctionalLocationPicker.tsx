@@ -14,7 +14,7 @@ type FunctionalLocation = {
   parentId?: string | null
   plantId?: string | null
   status?: string
-  hierarchyLevel?: { label?: string; allowAssetAssignment?: boolean } | null
+  hierarchyLevel?: { label?: string; allowAssetAssignment?: boolean; isActive?: boolean } | null
 }
 
 export type FunctionalLocationPickerProps = {
@@ -54,32 +54,36 @@ export function FunctionalLocationPicker({
   placeholder = 'Select functional location',
   className,
 }: FunctionalLocationPickerProps) {
-  const [locations, setLocations] = useState<FunctionalLocation[]>([])
-  const [loading, setLoading] = useState(false)
+  const scopeKey = JSON.stringify([hierarchySystemId || '', plantId || ''])
+  const [result, setResult] = useState<{ key: string; locations: FunctionalLocation[]; error: boolean } | null>(null)
+  const loading = result?.key !== scopeKey
+  const failed = !loading && result.error
+  const locations = useMemo(() => result?.key === scopeKey ? result.locations : [], [result, scopeKey])
+  const [retry, setRetry] = useState(0)
 
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
+    setResult(null)
     const params = new URLSearchParams({ status: 'active' })
     if (hierarchySystemId) params.set('hierarchySystemId', hierarchySystemId)
     if (plantId) params.set('plantId', plantId)
 
-    api.get<FunctionalLocation[]>(`/api/functional-locations?${params.toString()}`).then(res => {
-      if (!cancelled) setLocations(res.success && Array.isArray(res.data) ? res.data : [])
+    // The form's selected plant must override the shell's previously selected plant.
+    const options = plantId ? { headers: { 'x-plant-id': plantId } } : undefined
+    api.get<FunctionalLocation[]>(`/api/functional-locations?${params.toString()}`, options).then(res => {
+      if (!cancelled) setResult({ key: scopeKey, locations: res.success && Array.isArray(res.data) ? res.data : [], error: !res.success || !Array.isArray(res.data) })
     }).catch(() => {
-      if (!cancelled) setLocations([])
-    }).finally(() => {
-      if (!cancelled) setLoading(false)
+      if (!cancelled) setResult({ key: scopeKey, locations: [], error: true })
     })
 
     return () => { cancelled = true }
-  }, [hierarchySystemId, plantId])
+  }, [hierarchySystemId, plantId, scopeKey, retry])
 
   const options = useMemo(() => {
     const byId = new Map(locations.map(location => [location.id, location]))
     return locations
       .filter(location => !plantId || location.plantId === plantId)
-      .filter(location => !allowAssetAssignmentOnly || location.hierarchyLevel?.allowAssetAssignment)
+      .filter(location => !allowAssetAssignmentOnly || (location.hierarchyLevel?.allowAssetAssignment && location.hierarchyLevel.isActive !== false))
       .map(location => ({
         ...location,
         breadcrumb: buildBreadcrumb(location, byId),
@@ -90,11 +94,11 @@ export function FunctionalLocationPicker({
   return (
     <div className={className}>
       {label && <Label className="mb-1.5 block">{label}</Label>}
-      <Select value={value || ''} onValueChange={onValueChange} disabled={disabled || loading}>
-        <SelectTrigger className="w-full min-w-0">
+      <Select value={value || ''} onValueChange={onValueChange} disabled={disabled || loading || failed || options.length === 0}>
+        <SelectTrigger aria-label={label || 'Functional location'} className="w-full min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <SelectValue placeholder={loading ? 'Loading locations...' : placeholder} />
+            <SelectValue placeholder={loading ? 'Loading locations...' : failed ? 'Locations unavailable' : placeholder} />
           </div>
         </SelectTrigger>
         <SelectContent className="max-w-[min(42rem,calc(100vw-2rem))]">
@@ -104,13 +108,18 @@ export function FunctionalLocationPicker({
               <span className="ml-2 text-muted-foreground">{location.breadcrumb}</span>
             </SelectItem>
           ))}
-          {!loading && options.length === 0 && (
-            <div className="px-2 py-6 text-center text-sm text-muted-foreground">
-              No active assignable functional locations found.
-            </div>
-          )}
         </SelectContent>
       </Select>
+      {failed ? (
+        <div role="alert" className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-destructive">
+          <span>Could not load locations for the selected plant.</span>
+          <button type="button" className="font-medium underline" onClick={() => setRetry(n => n + 1)}>Retry</button>
+        </div>
+      ) : !loading && options.length === 0 ? (
+        <p role="status" className="mt-1.5 text-xs text-muted-foreground">
+          No active {allowAssetAssignmentOnly ? 'assignable ' : ''}locations in {hierarchySystemId ? 'this hierarchy' : 'the primary hierarchy'} for this selection.
+        </p>
+      ) : null}
     </div>
   )
 }

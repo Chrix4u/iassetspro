@@ -1,8 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { getComponentPlantAccess } from '@/lib/component-plant-access';
+import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 import { createAuditLog } from '@/lib/audit';
+
+async function getSparePartComponent(request:NextRequest,session:NonNullable<ReturnType<typeof getSession>>,id:string) {
+  const scope=await getPlantScope(request,session);
+  if(scope.denyAccess)return {error:NextResponse.json({success:false,error:'Plant access denied'},{status:403})} as const;
+  const component=await db.componentRegistry.findUnique({where:{id},select:{id:true,asset:{select:{plantId:true}}}});
+  if(!component)return {error:NextResponse.json({success:false,error:'Component not found'},{status:404})} as const;
+  if(!canAccessPlantStrict(scope,component.asset?.plantId))
+    return {error:NextResponse.json({success:false,error:'Plant access denied'},{status:403})} as const;
+  return {component} as const;
+}
+const optionalNumber=(value:unknown):number|null=>{
+  if(value==null||value==='')return null;
+  if(typeof value!=='number'&&(typeof value!=='string'||!value.trim()))return NaN;
+  return Number(value);
+};
 
 export async function GET(
   request: NextRequest,
@@ -19,25 +34,16 @@ export async function GET(
     }
 
     const { id } = await params;
-    const componentAccess = await getComponentPlantAccess(request, session, id);
-    if (!componentAccess.exists) {
-      return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
-    }
-    if (!componentAccess.allowed) {
-      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
-    }
-
-    const component = await db.componentRegistry.findUnique({
-      where: { id },
-      select: { id: true },
-    });
-
-    if (!component) {
-      return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
-    }
+    const access=await getSparePartComponent(request,session,id);
+    if('error' in access)return access.error;
+    const component=access.component;
 
     const spareParts = await db.componentSparePart.findMany({
-      where: { componentId: id },
+      // Never disclose inventory from another plant through a stale link.
+      where: { componentId: id, OR:[
+        {inventoryItemId:null},
+        ...(component.asset?.plantId?[{inventoryItem:{plantId:component.asset.plantId}}]:[]),
+      ] },
       include: {
         inventoryItem: {
           select: { id: true, itemCode: true, name: true, currentStock: true, unitOfMeasure: true, unitCost: true, location: true },
@@ -68,23 +74,22 @@ export async function POST(
     }
 
     const { id } = await params;
-    const componentAccess = await getComponentPlantAccess(request, session, id);
-    if (!componentAccess.exists) {
-      return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
-    }
-    if (!componentAccess.allowed) {
-      return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
-    }
+    const access=await getSparePartComponent(request,session,id);
+    if('error' in access)return access.error;
+    const component=access.component;
     const body = await request.json();
     const { inventoryItemId, sparePartName, sparePartCode, quantityRequired, unitCost, leadTimeDays, criticality, notes } = body;
 
-    if (!sparePartName) {
+    if (typeof sparePartName!=='string'||!sparePartName.trim()) {
       return NextResponse.json({ success: false, error: 'sparePartName is required' }, { status: 400 });
     }
-
-    const component = await db.componentRegistry.findUnique({ where: { id } });
-    if (!component) {
-      return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
+    const quantity=optionalNumber(quantityRequired)??1;
+    const cost=optionalNumber(unitCost);
+    const lead=optionalNumber(leadTimeDays);
+    if(!Number.isInteger(quantity)||quantity<1||quantity>2147483647||
+      (cost!==null&&(!Number.isFinite(cost)||cost<0))||
+      (lead!==null&&(!Number.isInteger(lead)||lead<0||lead>2147483647))){
+      return NextResponse.json({success:false,error:'Quantity must be a positive integer; cost and lead time must be non-negative (lead time in whole days)'},{status:400});
     }
 
     // Validate inventoryItemId if provided
@@ -92,6 +97,12 @@ export async function POST(
       const item = await db.inventoryItem.findUnique({ where: { id: inventoryItemId } });
       if (!item) {
         return NextResponse.json({ success: false, error: 'Inventory item not found' }, { status: 404 });
+      }
+      if(!component.asset?.plantId||item.plantId!==component.asset.plantId){
+        return NextResponse.json({success:false,error:'Inventory item belongs to a different plant'},{status:400});
+      }
+      if(!item.isActive){
+        return NextResponse.json({success:false,error:'Inventory item is inactive'},{status:400});
       }
     }
 
@@ -111,12 +122,12 @@ export async function POST(
     const sparePart = await db.componentSparePart.create({
       data: {
         componentId: id,
-        inventoryItemId,
-        sparePartName,
+        inventoryItemId:inventoryItemId||null,
+        sparePartName:sparePartName.trim(),
         sparePartCode: sparePartCode || '',
-        quantityRequired: quantityRequired ? parseInt(String(quantityRequired), 10) : 1,
-        unitCost: unitCost ? parseFloat(String(unitCost)) : null,
-        leadTimeDays: leadTimeDays ? parseInt(String(leadTimeDays), 10) : null,
+        quantityRequired:quantity,
+        unitCost:cost,
+        leadTimeDays:lead,
         criticality: criticality || 'medium',
         notes,
       },
@@ -154,6 +165,8 @@ export async function DELETE(
     }
 
     const { id: componentId } = await params;
+    const access=await getSparePartComponent(request,session,componentId);
+    if('error' in access)return access.error;
     const { searchParams } = new URL(request.url);
     const sparePartId = searchParams.get('sparePartId');
     if (!sparePartId) {

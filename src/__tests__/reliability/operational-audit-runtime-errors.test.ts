@@ -5,7 +5,7 @@ vi.mock('@/lib/auth',()=>({getSession:m.session,isAdmin:()=>true}));
 vi.mock('@/lib/plant-scope',()=>({getPlantScope:m.scope,getPlantFilterWhere:(s:{plantId?:string})=>s.plantId?{plantId:s.plantId}:{}}));
 vi.mock('@/lib/db',()=>({db:{iotDevice:{count:m.device,findMany:m.findDevice},iotAlert:{count:m.alert,findMany:m.findAlert},iotReading:{count:m.reading},iotAlertRule:{count:m.rule},$queryRaw:m.query}}));
 vi.mock('@/lib/logger',()=>({createLogger:()=>({error:vi.fn()})}));
-vi.mock('@/services/observability/openTelemetry.service',()=>({OpenTelemetryService:{getStats:()=>({totalSpans:0,maxSpans:100,activeSpans:0,completedTraces:0})}}));
+vi.mock('@/services/observability/openTelemetry.service',()=>({OpenTelemetryService:{getConfig:()=>({maxSpans:100}),getStats:()=>({totalSpans:0,maxSpans:100,activeSpans:0,completedTraces:0})}}));
 vi.mock('@/services/observability/prometheusMetrics.service',()=>({PrometheusMetricsService:{listMetrics:()=>[],getMetric:()=>null}}));
 vi.mock('@/services/observability/centralizedLogging.service',()=>({CentralizedLoggingService:{getStats:()=>({totalEntries:0,errorRate:0})}}));
 vi.mock('@/services/observability/persistence.service',()=>({getStatus:()=>({isRunning:false,config:{flushIntervalMs:1000},totalPersisted:{logs:0,traces:0,metrics:0}})}));

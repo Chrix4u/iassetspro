@@ -180,7 +180,7 @@ test('isolated UAT: planner standards, operator entry, independent approval and 
 });
 
 
-test('isolated demonstration: fresh machine, approved 5500 yards and 5000-yard PM threshold',async ({request})=>{
+test('isolated demonstration: fresh machine, approved 5500 yards and 5000-yard PM threshold',async ({request},testInfo)=>{
   if(process.env.CI!=='true'||!process.env.DATABASE_URL?.includes('/platform_e2e?schema=public')||
     process.env.PLAYWRIGHT_BASE_URL!=='http://127.0.0.1:3000'){
     if(process.env.CI)throw new Error('Demonstration must use isolated platform CI');
@@ -253,7 +253,8 @@ test('isolated demonstration: fresh machine, approved 5500 yards and 5000-yard P
   }});
   expect(shift.status(),await shift.text()).toBe(201);
   const shiftTemplateId=(await shift.json()).data.id;
-  const productionDate=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  // Use a separate historical date from the other operator scenario (and each retry).
+  const productionDate=new Date(Date.now()-(3+testInfo.retry)*86400000).toISOString().slice(0,10);
   const plan={assetId,shiftTemplateId,productionDate,plannedShiftsPerDay:1,shiftHours:8,
     availableMinutes:480,plannedBreakMinutes:30,startsAt:'06:00',endsAt:'14:00',
     targetQuantity:6000,unit:'yards',productCode,crewUserIds:[operatorId],leaderUserId:operatorId,

@@ -230,7 +230,7 @@ export function MobileBottomNav({ onMenuOpen }: MobileBottomNavProps) {
                 />
                 <span
                   className={cn(
-                    'text-[10px] leading-none font-medium truncate max-w-full px-1',
+                    'text-[10px] leading-tight font-medium text-center whitespace-normal max-w-full px-0.5',
                     active ? 'font-semibold' : '',
                   )}
                 >

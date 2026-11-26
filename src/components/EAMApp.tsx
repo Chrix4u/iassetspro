@@ -542,9 +542,9 @@ function AppShell() {
       <Sidebar />
       <div className="flex-1 flex flex-col min-w-0 overflow-clip">
         {/* Top Bar */}
-        <header className="h-14 border-b border-header-border flex items-center px-4 gap-3 shrink-0 bg-header z-10">
+        <header className="h-14 border-b border-header-border flex items-center px-2 gap-1 sm:px-4 sm:gap-2 lg:gap-3 shrink-0 min-w-0 bg-header z-10">
           <button
-            className="lg:hidden p-2 rounded-lg hover:bg-muted transition-colors"
+            aria-label="Open navigation" className="lg:hidden shrink-0 p-2 rounded-lg hover:bg-muted transition-colors"
             onClick={() => setMobileSidebarOpen(true)}
           >
             <Menu className="h-5 w-5" />
@@ -552,7 +552,7 @@ function AppShell() {
           {/* Back button — visible on mobile when not on dashboard */}
           {canGoBack && (
             <button
-              className="lg:hidden p-2 -ml-1 rounded-lg hover:bg-muted text-muted-foreground transition-colors"
+              aria-label="Go back" className="lg:hidden shrink-0 p-1.5 rounded-lg hover:bg-muted text-muted-foreground transition-colors"
               onClick={goBack}
             >
               <ChevronLeft className="h-5 w-5" />
@@ -564,16 +564,16 @@ function AppShell() {
           >
             {sidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
           </button>
-          <div className="hidden sm:flex items-center gap-2">
-            <h2 className="text-sm font-semibold text-foreground">{visiblePageTitle}</h2>
+          <div className="hidden lg:flex min-w-0 items-center gap-2">
+            <h2 className="text-sm font-semibold text-foreground truncate">{visiblePageTitle}</h2>
             <Separator orientation="vertical" className="h-4 bg-border/60" />
             <span className="text-xs text-muted-foreground">iAssetsPro</span>
           </div>
-          <div className="flex-1" />
+          <div className="flex-1 min-w-0" />
           {plantOptions.length > 1 && (
             <Select value={activePlantId || undefined} onValueChange={handlePlantContextChange}>
-              <SelectTrigger aria-label="Active plant" className="h-8 w-[150px] sm:w-[220px] text-xs">
-                <Building2 className="h-3.5 w-3.5 mr-1.5 shrink-0 text-muted-foreground" />
+              <SelectTrigger aria-label="Active plant" className="h-8 w-[min(30vw,8rem)] min-w-0 shrink text-xs gap-1 px-2 sm:w-[200px] sm:shrink-0 [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate">
+                <Building2 className="hidden sm:block h-3.5 w-3.5 mr-1.5 shrink-0 text-muted-foreground" />
                 <SelectValue placeholder="Select plant" />
               </SelectTrigger>
               <SelectContent align="end">
@@ -592,7 +592,7 @@ function AppShell() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="hidden sm:flex h-8 w-auto gap-2 px-3 text-muted-foreground hover:text-foreground hover:bg-muted"
+                  className="hidden xl:flex h-8 w-auto shrink-0 gap-2 px-3 text-muted-foreground hover:text-foreground hover:bg-muted"
                   onClick={() => {
                     if ((window as any).__openCommandPalette) (window as any).__openCommandPalette();
                   }}
@@ -607,7 +607,7 @@ function AppShell() {
               <TooltipContent>Command Palette (⌘⇧K)</TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
             {/* Theme Toggle */}
             <TooltipProvider delayDuration={0}>
               <Tooltip>
@@ -615,7 +615,7 @@ function AppShell() {
                   <Button
                     variant="ghost"
                     size="icon"
-                    className="h-9 w-9 hover:bg-muted transition-colors"
+                    aria-label="Toggle theme" className="h-9 w-8 sm:w-9 shrink-0 hover:bg-muted transition-colors"
                     onClick={() => {
                       const current = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
                       document.documentElement.classList.toggle('dark');
@@ -630,18 +630,18 @@ function AppShell() {
               </Tooltip>
             </TooltipProvider>
             {notificationsVisible && <NotificationPopover />}
-            <Separator orientation="vertical" className="h-6 mx-1 bg-border/40" />
+            <Separator orientation="vertical" className="hidden sm:block h-6 mx-1 bg-border/40" />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="flex items-center gap-2.5 pl-1 pr-1.5 py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer">
-                  <Avatar className="h-8 w-8 border-2 border-primary/20">
+                <button aria-label="Account menu" className="flex shrink-0 items-center gap-2.5 p-0.5 sm:pl-1 sm:pr-1.5 sm:py-1 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer">
+                  <Avatar className="h-8 w-8 shrink-0 border-2 border-primary/20">
                     <AvatarFallback className="text-xs font-bold bg-primary/10 text-primary">{user ? getInitials(user.fullName) : '?'}</AvatarFallback>
                   </Avatar>
-                  <div className="hidden md:block text-left">
-                    <p className="text-sm font-medium leading-none">{user?.fullName}</p>
+                  <div className="hidden lg:block text-left min-w-0 max-w-40">
+                    <p className="text-sm font-medium leading-none truncate">{user?.fullName}</p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">{user?.roles?.[0]?.name || 'User'}</p>
                   </div>
-                  <ChevronDown className="h-3.5 w-3 text-muted-foreground hidden md:block" />
+                  <ChevronDown className="h-3.5 w-3 text-muted-foreground hidden lg:block" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-60">

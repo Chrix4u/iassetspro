@@ -84,6 +84,8 @@ export interface DigitalTwinViewerProps {
   iotPollInterval?: number;
   /** Whether to show the scene tree panel */
   showSceneTree?: boolean;
+  /** Embedded asset explorer: reserve layout space for the tree instead of covering geometry. */
+  dockSceneTree?: boolean;
   /** Whether to show the component info panel */
   showInfoPanel?: boolean;
   /** Whether to enable WebSocket real-time updates (default: true) */
@@ -355,6 +357,7 @@ export function DigitalTwinViewer({
   iotPollInterval = 15000,
   enableRealtime = true,
   showSceneTree = true,
+  dockSceneTree = false,
   showInfoPanel = true,
   showToolbar = true,
   loadingComponent,
@@ -758,14 +761,55 @@ export function DigitalTwinViewer({
     onComponentSelect(selectedBinding.componentId, selectedBinding.meshName);
   }, [onComponentSelect, selectedBinding, selectedMeshName]);
 
+  const sceneTree = (
+    <SceneTreePanel
+        isOpen={isTreeOpen}
+        docked={dockSceneTree}
+        onToggle={handleToggleTree}
+        onMeshSelect={handleMeshSelectFromTree}
+        anatomyMeshes={anatomyMeshes}
+        anatomyTitle={scanMode ? 'As-built site scan · visible surfaces only' : isPrivateCad ? 'Private CAD · pending commissioning' :
+          isIllustrativeDemo ? 'Original illustrative CAD anatomy' : undefined}
+        suppressSceneFallback={isIllustrativeDemo}
+      />
+  );
+  const toolbar = (
+    <TwinToolbar
+          onResetCamera={resetCamera}
+          onScreenshot={handleScreenshot}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={handleToggleFullscreen}
+          viewMode={viewMode}
+          onViewModeChange={handleViewModeChange}
+          isTreeOpen={!dockSceneTree && isTreeOpen}
+          inlineLayout={dockSceneTree}
+          anatomyGroupCount={scanMode ? 0 : anatomySourceGroupCount}
+          allowExplosion={!scanMode && !onScanSurfacePick}
+          isIllustrativeDemo={isIllustrativeDemo}
+        />
+  );
+
   return (
     <div
-      className="relative w-full overflow-hidden"
+      className="relative w-full min-w-0 overflow-hidden @container"
+      data-testid={dockSceneTree ? "embedded-3d-viewer" : undefined}
       style={{
         height,
+        minHeight: dockSceneTree ? 620 : undefined,
         background: 'linear-gradient(135deg, #0a0a12 0%, #0d0d1a 50%, #0a0f14 100%)',
       }}
     >
+      <div className={dockSceneTree ? 'flex h-full min-h-0 min-w-0 flex-col-reverse @min-[640px]:flex-row' : 'relative h-full'}>
+        {dockSceneTree && (
+          <div data-testid="embedded-3d-tree-region" className={isTreeOpen
+            ? 'h-[220px] min-h-0 w-full shrink-0 overflow-hidden border-t border-white/10 @min-[640px]:h-full @min-[640px]:w-[240px] @min-[640px]:border-t-0'
+            : 'h-11 w-full shrink-0 @min-[640px]:h-full @min-[640px]:w-11'}>
+            {sceneTree}
+          </div>
+        )}
+        <div className={dockSceneTree ? 'flex min-h-0 min-w-0 flex-1 flex-col' : 'relative h-full'}>
+          {dockSceneTree && showToolbar && toolbar}
+          <div data-testid={dockSceneTree ? "embedded-3d-canvas-region" : undefined} className="relative min-h-0 min-w-0 flex-1 overflow-hidden" style={dockSceneTree ? undefined : {height:'100%'}}>
       {/* ── 3D Canvas (mounts empty, children added after delay) ────────── */}
       <Canvas
         shadows
@@ -884,17 +928,17 @@ export function DigitalTwinViewer({
 
       {/* ── Empty state overlay (no model) ───────────────────────────────── */}
       {!effectiveModelUrl && !isLoadingScene && !isResolvingScene && !effectiveError && !hasNoScenes && !twinId && (
-        <EmptyStateOverlay isTreeOpen={isTreeOpen} />
+        <EmptyStateOverlay isTreeOpen={!dockSceneTree && isTreeOpen} />
       )}
 
       {/* ── No scene state (twin has no scenes) ──────────────────────────── */}
       {!effectiveModelUrl && !isLoadingScene && !isResolvingScene && !effectiveError && hasNoScenes && (
-        <NoSceneOverlay twinName={twinName} isTreeOpen={isTreeOpen} />
+        <NoSceneOverlay twinName={twinName} isTreeOpen={!dockSceneTree && isTreeOpen} />
       )}
 
       {/* ── Status bar (bottom) ──────────────────────────────────────────── */}
       <div
-        className="absolute bottom-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-1.5"
+        className="absolute bottom-0 left-0 right-0 z-10 flex flex-wrap items-center justify-between gap-1 px-4 py-1.5 pointer-events-none"
         style={{
           background: 'rgba(10,10,18,0.7)',
           borderTop: '1px solid rgba(148,163,184,0.06)',
@@ -936,37 +980,17 @@ export function DigitalTwinViewer({
         </div>
       </div>
 
-      {/* ── Floating Toolbar (top center) ────────────────────────────────── */}
-      {showToolbar && (
-        <TwinToolbar
-          onResetCamera={resetCamera}
-          onScreenshot={handleScreenshot}
-          isFullscreen={isFullscreen}
-          onToggleFullscreen={handleToggleFullscreen}
-          viewMode={viewMode}
-          onViewModeChange={handleViewModeChange}
-          isTreeOpen={isTreeOpen}
-          anatomyGroupCount={scanMode ? 0 : anatomySourceGroupCount}
-          allowExplosion={!scanMode && !onScanSurfacePick}
-          isIllustrativeDemo={isIllustrativeDemo}
-        />
-      )}
+      {!dockSceneTree && showToolbar && toolbar}
 
-      {/* ── Scene Tree Panel (left) ──────────────────────────────────────── */}
-      <SceneTreePanel
-        isOpen={isTreeOpen}
-        onToggle={handleToggleTree}
-        onMeshSelect={handleMeshSelectFromTree}
-        anatomyMeshes={anatomyMeshes}
-        anatomyTitle={scanMode ? 'As-built site scan · visible surfaces only' : isPrivateCad ? 'Private CAD · pending commissioning' :
-          isIllustrativeDemo ? 'Original illustrative CAD anatomy' : undefined}
-        suppressSceneFallback={isIllustrativeDemo}
-      />
+      {!dockSceneTree && sceneTree}
 
       {/* ── Component Info Panel (right) ─────────────────────────────────── */}
       {showInfoPanel && isInfoPanelOpen && selectedAssetId && (
         <ComponentInfoPanel isOpen={isInfoPanelOpen} />
       )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

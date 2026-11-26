@@ -117,10 +117,17 @@ test('hierarchy builder preserves input focus and keeps creation visible on shor
   for (const viewport of [{ width: 1366, height: 650 }, { width: 390, height: 600 }]) {
     await page.setViewportSize(viewport);
     await expect(create).toBeInViewport({ ratio: 1 });
-    const bounds = (await dialog.boundingBox())!;
-    expect(bounds.width).toBeLessThanOrEqual(Math.min(761, viewport.width - 30));
-    expect(bounds.y).toBeGreaterThanOrEqual(0);
-    expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height + 1);
+    // Resizing a Radix portal can trigger a transient layout/animation frame.
+    // Require the settled dialog to fit on both axes, not just its footer.
+    await expect.poll(async () => {
+      const bounds = await dialog.boundingBox();
+      return Boolean(bounds
+        && bounds.width <= Math.min(761, viewport.width - 30)
+        && bounds.x >= 0
+        && bounds.x + bounds.width <= viewport.width + 1
+        && bounds.y >= 0
+        && bounds.y + bounds.height <= viewport.height + 1);
+    }, { message: 'The complete hierarchy dialog must fit the viewport' }).toBe(true);
     await body.evaluate(node => { node.scrollTop = node.scrollHeight; });
     await expect(create).toBeInViewport({ ratio: 1 });
     expect(await body.evaluate(node => node.scrollWidth - node.clientWidth)).toBeLessThanOrEqual(2);

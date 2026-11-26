@@ -31,7 +31,7 @@ import {
   Plus, Search, MoreHorizontal, Pencil, Trash2, AlertTriangle, CheckCircle2,
   Filter, Users, Calendar, Eye, ListChecks, ShieldAlert, Play, X,
   Activity, BookOpen, ClipboardCheck, ClipboardList, Settings, Send, Target, TrendingUp,
-  Download, BarChart3, Wrench, StopCircle, FileCheck, Crosshair,
+  Download, BarChart3, Wrench, StopCircle, FileCheck, Crosshair, type LucideIcon,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton, formatDuration } from '@/components/shared/helpers';
 import { SearchableSelect } from '@/components/ui/searchable-select';
@@ -858,7 +858,7 @@ export function OperationsChecklistsPage() {
     calibration: 'bg-teal-50 text-teal-700 border-teal-200',
   };
 
-  const catIcons: Record<string, React.ElementType> = {
+  const catIcons: Record<string, LucideIcon> = {
     safety: ShieldAlert,
     maintenance: Wrench,
     inspection: Search,

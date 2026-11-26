@@ -213,10 +213,42 @@ const pages = [
     "settings-audit",
     "Audit Logs"
   ]
+,
+  ["admin","settings-general","General Settings"],
+  ["admin","settings-modules","Module Management"],
+  ["admin","settings-hierarchy","Hierarchy & Locations"],
+  ["admin","settings-notifications","Notification Preferences"],
+  ["admin","settings-integrations","Integrations"],
+  ["admin","settings-security","Security Settings"],
+  ["admin","settings-backup","Backup & Restore"],
+  ["admin","settings-health","System Health"],
+  ["admin","settings-preferences","My Preferences"],
+  ["admin","settings-gtp-migration","GTP Data Migration"],
+  ["assets","asset-categories","Asset Categories"],
+  ["assets","ai-config","AI Configuration"],
+  ["inventory","inventory-locations","Inventory Locations"],
+  ["inventory","inventory-adjustments","Inventory Adjustments"],
+  ["inventory","inventory-requests","Inventory Requests"],
+  ["inventory","inventory-transfers","Inventory Transfers"],
+  ["inventory","inventory-suppliers","Suppliers"],
+  ["inventory","inventory-purchase-orders","Purchase Orders"],
+  ["inventory","inventory-receiving","Receiving"],
+  ["production","production-resource-planning","Resource Planning"],
+  ["production","production-scheduling","Production Scheduling"],
+  ["production","production-capacity","Capacity Management"],
+  ["production","production-efficiency","Production Efficiency"],
+  ["production","production-bottlenecks","Bottleneck Analysis"],
+  ["production","production-orders","Production Orders"],
+  ["production","production-batches","Batch Management"],
+  ["reports","reports-production","Production Reports"],
+  ["reports","reports-financial","Financial Reports"],
+  ["reports","reports-custom","Custom Reports"],
+  ["reports","failure-analysis","Failure Code / Root Cause Analysis"],
+  ["reports","machine-availability","Machine Availability & Efficiency"]
 ] as const;
 
 for (const [phase, route, heading] of pages) {
-  test(`GTP phase ${phase}: ${route} renders at desktop and mobile widths`, async ({page,context,request},info) => {
+  test(`GTP audit ${phase}: ${route} renders at desktop and mobile widths`, async ({page,context,request},info) => {
     test.setTimeout(90_000);
     if (process.env.PLAYWRIGHT_BASE_URL !== 'http://127.0.0.1:3000' ||
         !process.env.DATABASE_URL?.includes('/platform_e2e?')) {

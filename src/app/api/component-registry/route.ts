@@ -192,7 +192,7 @@ export async function POST(request: NextRequest) {
       if (!canAccessPlant(plantScope, parent.asset?.plantId)) {
         return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
       }
-      if (assetId && parent.assetId !== assetId) {
+      if (parent.assetId !== (assetId || null)) {
         return NextResponse.json(
           { success: false, error: 'Parent component belongs to a different asset' },
           { status: 400 },

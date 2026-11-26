@@ -211,13 +211,25 @@ export async function PUT(
       }
     }
 
-    // Validate parentId if changing. Keep the hierarchy inside one asset
-    // and reject cycles such as A -> B -> C -> A.
-    if (updateData.parentId && updateData.parentId !== existing.parentId) {
-      if (updateData.parentId === existing.id) {
+    // Validate the effective asset and parent together, including a retained
+    // parent when the asset changes.
+    const targetAssetId = updateData.assetId !== undefined
+      ? (updateData.assetId as string | null) : existing.assetId;
+    const targetParentId = updateData.parentId !== undefined
+      ? (updateData.parentId as string | null) : existing.parentId;
+    if (targetAssetId !== existing.assetId) {
+      const children = await db.componentRegistry.findMany({
+        where: { parentId: id }, select: { assetId: true },
+      });
+      if (children.some(child => child.assetId !== targetAssetId)) {
+        return NextResponse.json({ success: false, error: 'Component children belong to a different asset' }, { status: 409 });
+      }
+    }
+    if (targetParentId && (targetAssetId !== existing.assetId || targetParentId !== existing.parentId)) {
+      if (targetParentId === existing.id) {
         return NextResponse.json({ success: false, error: 'Component cannot be its own parent' }, { status: 400 });
       }
-      const parentId = updateData.parentId as string;
+      const parentId = targetParentId;
       const parent = await db.componentRegistry.findUnique({
         where: { id: parentId },
         include: { asset: { select: { plantId: true } } },
@@ -230,10 +242,7 @@ export async function PUT(
         return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
       }
 
-      const targetAssetId = updateData.assetId !== undefined
-        ? (updateData.assetId as string | null)
-        : existing.assetId;
-      if (targetAssetId && parent.assetId !== targetAssetId) {
+      if (parent.assetId !== targetAssetId) {
         return NextResponse.json(
           { success: false, error: 'Parent component belongs to a different asset' },
           { status: 400 },
@@ -242,19 +251,25 @@ export async function PUT(
 
       let cursor: typeof parent | null = parent;
       const seen = new Set<string>();
-      for (let depth = 0; cursor && depth < 64; depth++) {
-        if (cursor.id === existing.id) {
+      while (cursor) {
+        if (cursor.id === existing.id || seen.has(cursor.id) || seen.size >= 64) {
           return NextResponse.json(
-            { success: false, error: 'Parent selection would create a component hierarchy cycle' },
+            { success: false, error: 'Parent selection would create a component hierarchy cycle or exceeds the validated depth' },
             { status: 400 },
           );
         }
-        if (!cursor.parentId || seen.has(cursor.parentId)) break;
+        if (cursor.assetId !== targetAssetId || !canAccessPlant(plantScope, cursor.asset?.plantId)) {
+          return NextResponse.json({ success: false, error: 'Parent hierarchy is outside the selected asset' }, { status: 400 });
+        }
         seen.add(cursor.id);
+        if (!cursor.parentId) break;
         cursor = await db.componentRegistry.findUnique({
           where: { id: cursor.parentId },
           include: { asset: { select: { plantId: true } } },
         });
+        if (!cursor) {
+          return NextResponse.json({ success: false, error: 'Parent hierarchy is incomplete' }, { status: 400 });
+        }
       }
     }
 

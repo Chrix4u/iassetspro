@@ -16,7 +16,7 @@ describe('create/edit machine modal responsive layout', () => {
     expect(assetForm).toContain("title={editId ? 'Edit Asset' : 'Create Asset'}");
     expect(assetForm).toContain('footer={');
     expect(assetForm).toContain('data-testid="asset-create-form"');
-    expect(assetForm).toContain("onClick={handleSave} disabled={saving}");
+    expect(assetForm).toContain("onClick={handleSave} disabled={saving || locationAssignmentLoading}");
   });
 
   it('stacks fields on phones and shows even two/three-column rows only when space allows', () => {

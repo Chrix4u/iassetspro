@@ -1,3 +1,4 @@
+import { validateDepartmentParent } from '@/lib/department-hierarchy';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
@@ -86,13 +87,8 @@ export async function POST(request: NextRequest) {
     }
 
     if (parentId) {
-      const parent = await db.department.findUnique({ where: { id: parentId } });
-      if (!parent) {
-        return NextResponse.json(
-          { success: false, error: 'Parent department not found' },
-          { status: 400 }
-        );
-      }
+      const error=await validateDepartmentParent(db, {plantId,parentId});
+      if(error)return NextResponse.json({success:false,error},{status:400});
     }
 
     if (supervisorId) {

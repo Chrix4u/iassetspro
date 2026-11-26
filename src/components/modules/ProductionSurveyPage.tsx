@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { AsyncSearchableSelect, type SearchableOption } from '@/components/ui/searchable-select';
 import { Badge } from '@/components/ui/badge';
 import { formatProductionPeriodLabel } from '@/lib/production-period-display';
+import { productionCsvCell as csvValue, reportedProductionValue } from '@/lib/production-survey-csv';
 import { getWorkbookBenchmark } from '@/lib/production-survey-workbook-benchmarks';
 import { ClipboardCheck, Factory, Gauge, Plus, RefreshCw, Download } from 'lucide-react';
 
@@ -66,11 +67,6 @@ const stoppageFields=[
  ['startupCleaningMinutes','Start-up / cleaning'],['otherMinutes','Other stoppages'],
  ['preventiveMinutes','Preventive maintenance'],
 ] as const;
-const csvValue=(value:unknown)=>{
- const text=String(value??'');
- const safe=/^[=+@-]/.test(text)?"'"+text:text;
- return '"'+safe.replace(/"/g,'""')+'"';
-};
 const dayLabel=formatProductionPeriodLabel;
 const amount=(number:number)=>number.toLocaleString('en-GH',{maximumFractionDigits:2});
 const pct=(number:number|null)=>number==null?'—':number.toFixed(1)+'%';
@@ -358,9 +354,9 @@ export default function ProductionSurveyPage(){
  const exportCsv=()=>{
    const headers=['Period','Machine','Machine Code','Product/Design Codes','Shifts Entered','Scheduled Shifts','Unapproved/Missing Shifts','Shift Names','Unit','Gross Production','Defective Production','Good Production','Defect Rate %','Start Delay Min','Target','Available Min','Stoppage Min','Productive Min','Utilization %','Standard Utilization %','Actual Speed per Min','Standard Speed per Min','Productivity per Min','Engineering Efficiency %','Target Achievement %','Period Cumulative Production','All-time Cumulative Production','Repair Min','PM Min','PM Meter Output'];
    const lines=[headers,...reports.map(r=>[dayLabel(r.period),r.machine,r.assetTag,r.productCodes.join(' / '),r.shifts,r.plannedShifts,r.unapprovedOrMissingShifts,r.shiftNames.join(' / '),
-     r.unit,r.output,r.defects,r.goodOutput,r.defectRatePct??'',r.startDelayMinutes,r.target,r.availableMinutes,r.downtimeMinutes,r.productiveMinutes,
+     r.unit,reportedProductionValue(r.approvedOutputReported,r.output),reportedProductionValue(r.approvedOutputReported,r.defects),reportedProductionValue(r.approvedOutputReported,r.goodOutput),r.defectRatePct??'',r.startDelayMinutes,r.target,r.availableMinutes,r.downtimeMinutes,r.productiveMinutes,
      r.utilizationPct??'',r.standardUtilizationPct??'',r.speedPerMinute??'',r.standardSpeedPerMinute??'',
-     r.productivityPerMinute??'',r.engineeringEfficiencyPct??'',r.targetAchievementPct??'',r.workbookCumulativeProduction,r.cumulativeProduction,
+     r.productivityPerMinute??'',r.engineeringEfficiencyPct??'',r.targetAchievementPct??'',reportedProductionValue(r.approvedOutputReported,r.workbookCumulativeProduction),r.cumulativeProduction,
      r.repairMinutes,r.preventiveMinutes,r.meterLinkedOutput])];
    const blob=new Blob(['\uFEFF'+lines.map(x=>x.map(csvValue).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
    const url=URL.createObjectURL(blob),a=document.createElement('a');

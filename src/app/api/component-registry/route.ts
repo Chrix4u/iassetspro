@@ -1,3 +1,4 @@
+import { persistOpeningMeterReadings } from '@/services/assets/assetMeter.service';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
@@ -160,6 +161,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
     }
 
+    let meterPlantId:string|null=null;
     if (assetId) {
       const asset = await db.asset.findUnique({
         where: { id: assetId },
@@ -171,6 +173,7 @@ export async function POST(request: NextRequest) {
       if (!canAccessPlant(plantScope, asset.plantId)) {
         return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
       }
+      meterPlantId=asset.plantId;
     }
 
     // Check unique componentCode
@@ -192,7 +195,7 @@ export async function POST(request: NextRequest) {
       if (!canAccessPlant(plantScope, parent.asset?.plantId)) {
         return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
       }
-      if (assetId && parent.assetId !== assetId) {
+      if (parent.assetId !== (assetId || null)) {
         return NextResponse.json(
           { success: false, error: 'Parent component belongs to a different asset' },
           { status: 400 },
@@ -223,7 +226,7 @@ export async function POST(request: NextRequest) {
     }catch(error){return NextResponse.json({success:false,
       error:error instanceof Error?error.message:'Invalid component commissioning data'},{status:400});}
     if(parsedMeters.length&&(!assetId||
-      (!isAdmin(session)&&!hasPermission(session,'meters.create'))))
+      !meterPlantId||(!isAdmin(session)&&!hasPermission(session,'meters.create'))))
       return NextResponse.json({success:false,error:'A machine and meter creation permission are required'},{status:403});
     if(parsedMeters.length&&assetId){
       const duplicate=await db.assetMeter.findMany({where:{assetId},
@@ -283,6 +286,10 @@ export async function POST(request: NextRequest) {
         currentValue:m.initialValue,lastReadingAt:m.initialReadingProvided?new Date():null,
         createdById:session.userId,
       }))});
+      if(meterPlantId&&parsedMeters.some(m=>m.initialReadingProvided)){
+        const meters=await tx.assetMeter.findMany({where:{assetId,componentId:created.id}});
+        await persistOpeningMeterReadings(tx,{assetId,plantId:meterPlantId,actorId:session.userId,meters});
+      }
     }
     await tx.auditLog.create({data:{
       userId:session.userId,action:'create',entityType:'component_registry',entityId:created.id,

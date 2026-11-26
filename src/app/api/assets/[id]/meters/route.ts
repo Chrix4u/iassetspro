@@ -41,15 +41,18 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
     const body = await request.json();
-    const meter = await createAssetMeter(db, { assetId: scoped.asset.id, actorId: scoped.session.userId, definition: body });
-    await db.auditLog.create({
+    const meter = await db.$transaction(async tx => {
+      const created = await createAssetMeter(tx, { assetId: scoped.asset.id, plantId: scoped.asset.plantId, actorId: scoped.session.userId, definition: body });
+      await tx.auditLog.create({
       data: {
         userId: scoped.session.userId,
         action: 'create',
         entityType: 'asset_meter',
-        entityId: meter.id,
-        newValues: JSON.stringify({ assetId: scoped.asset.id, name: meter.name, unit: meter.unit, meterType: meter.meterType }),
+        entityId: created.id,
+        newValues: JSON.stringify({ assetId: scoped.asset.id, name: created.name, unit: created.unit, meterType: created.meterType }),
       },
+      });
+      return created;
     });
     return NextResponse.json({ success: true, data: meter }, { status: 201 });
   } catch (error: unknown) {

@@ -1,3 +1,4 @@
+import { validateAssetRelationships } from '@/lib/assets/asset-relationship-integrity';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
@@ -116,12 +117,24 @@ export async function PUT(
       return NextResponse.json({ success: false, error: 'Destination plant access denied' }, { status: 403 });
     }
 
+    if(body.plantId!==undefined && body.plantId!==existing.plantId){
+      return NextResponse.json({success:false,error:'Moving a registered machine to another plant requires a controlled transfer'},{status:409});
+    }
+
     if (body.parentId) {
       const parent = await db.asset.findUnique({ where: { id: body.parentId }, select: { plantId: true } });
       if (!parent || !canAccessPlant(plantScope, parent.plantId)) {
         return NextResponse.json({ success: false, error: 'Parent asset not found or access denied' }, { status: 403 });
       }
     }
+
+    const relationshipError=await validateAssetRelationships(db,{
+      plantId:existing.plantId,
+      departmentId:body.departmentId===undefined?existing.departmentId:body.departmentId,
+      parentId:body.parentId===undefined?existing.parentId:body.parentId,
+      assetId:id,
+    });
+    if(relationshipError)return NextResponse.json({success:false,error:relationshipError},{status:400});
 
     if (body.acquisitionCondition !== undefined && body.acquisitionCondition !== 'new' && body.acquisitionCondition !== 'used') {
       return NextResponse.json({ success: false, error: 'Condition must be New or Used' }, { status: 400 });

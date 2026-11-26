@@ -7,6 +7,7 @@ export interface MachineReadinessEvidence {
   registeredComponents:number;
   uncommissionedComponents:number;
   inspectionParameters:number;
+  inspectionParametersNeedingReview:number;
   meterCount:number;
   meterReadingsObserved:number;
   productionMeters:number;
@@ -50,9 +51,11 @@ export function evaluateMachineCommissioningReadiness(e:MachineReadinessEvidence
         `${e.uncommissionedComponents}/${e.registeredComponents} components remain uncommissioned drafts`:
         `${e.registeredComponents} registered components; validate against engineering parts book`),
     check('parameters','Machine inspection parameters',
-      !e.inspectionParameters?'missing':e.nameplate.aiDraft?'review':'configured',
+      !e.inspectionParameters?'missing':e.nameplate.aiDraft || e.inspectionParametersNeedingReview>0?'review':'configured',
       !e.inspectionParameters?'Set inspection parameters with limits, units and source references':
-      `${e.inspectionParameters} defined; verify all manufacturer limits and units`),
+      e.inspectionParametersNeedingReview>0?
+        `${e.inspectionParametersNeedingReview} of ${e.inspectionParameters} parameters need source references or measurement limits; one-sided limits are allowed`:
+        `${e.inspectionParameters} defined; verify all manufacturer limits and units`),
     check('meters','Production and runtime meters',
       !e.meterCount?'missing':
       !e.productionMeters || !e.runtimeMeters || !e.productionMetersObserved ||

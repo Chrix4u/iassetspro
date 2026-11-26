@@ -82,6 +82,11 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
     const aiDraft=Boolean(draft&&typeof draft==='object'&&
       (draft as {verified?:unknown}).verified!==true);
 
+    const inspectionParameters=readMachineParameters(asset.specification);
+    const inspectionParametersNeedingReview=inspectionParameters.filter(parameter=>
+      !parameter.reference.trim() || (parameter.inspectionType==='measurement' &&
+        (parameter.min===null && parameter.max===null)),
+    ).length;
     const productionMeters=meters.filter(m=>allowedProductionMeter(m.meterType));
     const runtimeMeters=meters.filter(m=>allowedRuntimeMeter(m.meterType,m.unit));
     const result=evaluateMachineCommissioningReadiness({
@@ -90,7 +95,8 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
       },
       locationAssignments,
       registeredComponents,uncommissionedComponents,
-      inspectionParameters:readMachineParameters(asset.specification).length,
+      inspectionParameters:inspectionParameters.length,
+      inspectionParametersNeedingReview,
       meterCount:meters.length,
       meterReadingsObserved:meters.filter(m=>m.lastReadingAt!==null).length,
       productionMeters:productionMeters.length,

@@ -114,6 +114,23 @@ describe('plant-scoped live machine commissioning readiness API',()=>{
     expect(body.data.physicalAcceptanceComplete).toBe(false);
     expect(response.headers.get('cache-control')).toContain('no-store');
   });
+  it('requires source references and at least one measurement bound, but accepts visual checks and one-sided limits',async()=>{
+    mocks.asset.mockResolvedValueOnce({
+      id:machine,plantId:'plant-a',manufacturer:'OEM',model:'M-2026',serialNumber:'SN-100',
+      specification:JSON.stringify({inspectionParameters:[
+        {name:'Temperature',inspectionType:'measurement',unit:'C',min:null,max:90,reference:'Manual page 7'},
+        {name:'Visual leak check',inspectionType:'visual',reference:'Manual page 8'},
+        {name:'Pressure',inspectionType:'measurement',unit:'bar',min:null,max:null,reference:'Manual page 9'},
+        {name:'Vibration',inspectionType:'measurement',unit:'mm/s',min:0,max:4.2,reference:' '},
+      ]}),
+    });
+    const response=await GET(request(),params);
+    expect(response.status).toBe(200);
+    const body=await response.json();
+    const row=body.data.checks.find((c:{key:string})=>c.key==='parameters');
+    expect(row.state).toBe('review');
+    expect(row.detail).toContain('2 of 4 parameters');
+  });
   it('does not count unrelated observed meters as production or hour-counter evidence',async()=>{
     mocks.meters.mockResolvedValue([
       {meterType:'production',unit:'tonne',lastReadingAt:null},

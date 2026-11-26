@@ -48,6 +48,20 @@ export function inspectSelfContainedGlb(bytes: Uint8Array): CheckedGlb {
   if (!root || !asset || asset.version !== '2.0') {
     throw new Error('Invalid glTF asset metadata');
   }
+  // The browser viewer uses the built-in GLTFLoader without proprietary or
+  // remote decoder dependencies. Do not silently accept imported geometry
+  // that requires a decoder this deployed viewer cannot actually provide.
+  const decoderExtensions = [
+    'KHR_draco_mesh_compression', 'EXT_meshopt_compression', 'KHR_texture_basisu',
+  ];
+  const required = Array.isArray(root.extensionsRequired) ? root.extensionsRequired : [];
+  const missingDecoder = required.find(ext => decoderExtensions.includes(String(ext)));
+  if (missingDecoder) {
+    throw new Error(
+      'GLB requires unsupported compressed extension ' + missingDecoder +
+      '; export a self-contained standard GLB for the current offline viewer',
+    );
+  }
   // GLB 2.0 permits a JSON chunk and at most one immediately following BIN
   // chunk. Reject truncated headers, dangling bytes and unsupported chunks.
   // This check prevents a misleading JSON manifest from being approved while

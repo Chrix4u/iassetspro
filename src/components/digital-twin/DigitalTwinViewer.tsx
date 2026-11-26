@@ -23,7 +23,7 @@ import { api } from '@/lib/api';
 
 import { SceneLighting } from './SceneLighting';
 import { GroundPlane } from './GroundPlane';
-import { ModelLoader } from './ModelLoader';
+import { ModelLoader, type ScanOverlayHotspot, type ScanSurfacePick } from './ModelLoader';
 import { countImportedSourceGroups, type ImportedAnatomyMesh } from './anatomyBindings';
 import { InteractiveMesh, type AssetMeshBinding } from './InteractiveMesh';
 import { IoTOverlayLayer } from './IoTOverlayLayer';
@@ -52,7 +52,20 @@ import { Button } from '@/components/ui/button';
 // Types
 // ============================================================================
 
+export interface ApprovedCadScanOverlay {
+  cadModelUrl:string;
+  translation:{x:number;y:number;z:number};
+  rotation:[number,number,number,number];
+  opacity?:number;
+}
+
 export interface DigitalTwinViewerProps {
+  /** Independently approved CAD registration on the same installed asset. */
+  approvedCadOverlay?:ApprovedCadScanOverlay|null;
+  /** As-built LiDAR/photogrammetry model; never inferred OEM internals. */
+  scanMode?: boolean;
+  scanHotspots?: ScanOverlayHotspot[];
+  onScanSurfacePick?: (selection: ScanSurfacePick) => void;
   /** Scene ID to load (null for empty state) */
   sceneId?: string | null;
   /** Override model URL (optional) */
@@ -71,6 +84,8 @@ export interface DigitalTwinViewerProps {
   iotPollInterval?: number;
   /** Whether to show the scene tree panel */
   showSceneTree?: boolean;
+  /** Embedded asset explorer: reserve layout space for the tree instead of covering geometry. */
+  dockSceneTree?: boolean;
   /** Whether to show the component info panel */
   showInfoPanel?: boolean;
   /** Whether to enable WebSocket real-time updates (default: true) */
@@ -342,6 +357,7 @@ export function DigitalTwinViewer({
   iotPollInterval = 15000,
   enableRealtime = true,
   showSceneTree = true,
+  dockSceneTree = false,
   showInfoPanel = true,
   showToolbar = true,
   loadingComponent,
@@ -351,6 +367,10 @@ export function DigitalTwinViewer({
   onAnatomyMeshList,
   anatomyRevision = 0,
   previewAssetModelId,
+  scanMode=false,
+  scanHotspots=[],
+  onScanSurfacePick,
+  approvedCadOverlay=null,
 }: DigitalTwinViewerProps) {
   // ── Store state ──────────────────────────────────────────────────────────
   const currentScene = useDigitalTwinStore((s) => s.currentScene);
@@ -741,14 +761,55 @@ export function DigitalTwinViewer({
     onComponentSelect(selectedBinding.componentId, selectedBinding.meshName);
   }, [onComponentSelect, selectedBinding, selectedMeshName]);
 
+  const sceneTree = (
+    <SceneTreePanel
+        isOpen={isTreeOpen}
+        docked={dockSceneTree}
+        onToggle={handleToggleTree}
+        onMeshSelect={handleMeshSelectFromTree}
+        anatomyMeshes={anatomyMeshes}
+        anatomyTitle={scanMode ? 'As-built site scan · visible surfaces only' : isPrivateCad ? 'Private CAD · pending commissioning' :
+          isIllustrativeDemo ? 'Original illustrative CAD anatomy' : undefined}
+        suppressSceneFallback={isIllustrativeDemo}
+      />
+  );
+  const toolbar = (
+    <TwinToolbar
+          onResetCamera={resetCamera}
+          onScreenshot={handleScreenshot}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={handleToggleFullscreen}
+          viewMode={viewMode}
+          onViewModeChange={handleViewModeChange}
+          isTreeOpen={!dockSceneTree && isTreeOpen}
+          inlineLayout={dockSceneTree}
+          anatomyGroupCount={scanMode ? 0 : anatomySourceGroupCount}
+          allowExplosion={!scanMode && !onScanSurfacePick}
+          isIllustrativeDemo={isIllustrativeDemo}
+        />
+  );
+
   return (
     <div
-      className="relative w-full overflow-hidden"
+      className="relative w-full min-w-0 overflow-hidden @container"
+      data-testid={dockSceneTree ? "embedded-3d-viewer" : undefined}
       style={{
         height,
+        minHeight: dockSceneTree ? 620 : undefined,
         background: 'linear-gradient(135deg, #0a0a12 0%, #0d0d1a 50%, #0a0f14 100%)',
       }}
     >
+      <div className={dockSceneTree ? 'flex h-full min-h-0 min-w-0 flex-col-reverse @min-[640px]:flex-row' : 'relative h-full'}>
+        {dockSceneTree && (
+          <div data-testid="embedded-3d-tree-region" className={isTreeOpen
+            ? 'h-[220px] min-h-0 w-full shrink-0 overflow-hidden border-t border-white/10 @min-[640px]:h-full @min-[640px]:w-[240px] @min-[640px]:border-t-0'
+            : 'h-11 w-full shrink-0 @min-[640px]:h-full @min-[640px]:w-11'}>
+            {sceneTree}
+          </div>
+        )}
+        <div className={dockSceneTree ? 'flex min-h-0 min-w-0 flex-1 flex-col' : 'relative h-full'}>
+          {dockSceneTree && showToolbar && toolbar}
+          <div data-testid={dockSceneTree ? "embedded-3d-canvas-region" : undefined} className="relative min-h-0 min-w-0 flex-1 overflow-hidden" style={dockSceneTree ? undefined : {height:'100%'}}>
       {/* ── 3D Canvas (mounts empty, children added after delay) ────────── */}
       <Canvas
         shadows
@@ -784,21 +845,41 @@ export function DigitalTwinViewer({
                   onLoadingComplete={handleModelLoadingComplete}
                   onMeshCount={setAnatomyMeshCount}
                   onAnatomyManifest={onAnatomyManifest}
+                  scanMode={scanMode}
+                  scanHotspots={scanHotspots}
+                  onScanSurfacePick={onScanSurfacePick}
+                  onScanHotspotSelect={componentId=>onComponentSelect?.(componentId,'site-scan-hotspot')}
+                  modelLocalChildren={scanMode && approvedCadOverlay ? (
+                    <group
+                      position={[
+                        approvedCadOverlay.translation.x,
+                        approvedCadOverlay.translation.y,
+                        approvedCadOverlay.translation.z,
+                      ]}
+                      quaternion={approvedCadOverlay.rotation}>
+                      <ModelLoader
+                        modelUrl={approvedCadOverlay.cadModelUrl}
+                        bindings={EMPTY_ANATOMY_BINDINGS}
+                        autoScale={false} autoCenter={false}
+                        displayOpacity={approvedCadOverlay.opacity??0.42}
+                      />
+                    </group>
+                  ) : undefined}
                   onError={handleModelError}
                   onProgress={handleProgress}
                 />
               )}
 
               {/* Exploded view */}
-              <ExplodedView bindings={effectiveBindings} />
+              {!scanMode && !onScanSurfacePick && <ExplodedView bindings={effectiveBindings} />}
 
               {/* Section plane */}
               <SectionPlane />
 
               {/* Original illustrative demo files must not show previous asset telemetry. */}
-              {!isIllustrativeDemo && <IoTOverlayLayer />}
-              {!isIllustrativeDemo && <HotspotLayer />}
-              {!isIllustrativeDemo && <AnnotationLayer />}
+              {!isIllustrativeDemo && !scanMode && !onScanSurfacePick && <IoTOverlayLayer />}
+              {!isIllustrativeDemo && !scanMode && !onScanSurfacePick && <HotspotLayer />}
+              {!isIllustrativeDemo && !scanMode && !onScanSurfacePick && <AnnotationLayer />}
 
               {/* Background click handler (deselect) */}
               <BackgroundClickHandler />
@@ -847,17 +928,17 @@ export function DigitalTwinViewer({
 
       {/* ── Empty state overlay (no model) ───────────────────────────────── */}
       {!effectiveModelUrl && !isLoadingScene && !isResolvingScene && !effectiveError && !hasNoScenes && !twinId && (
-        <EmptyStateOverlay isTreeOpen={isTreeOpen} />
+        <EmptyStateOverlay isTreeOpen={!dockSceneTree && isTreeOpen} />
       )}
 
       {/* ── No scene state (twin has no scenes) ──────────────────────────── */}
       {!effectiveModelUrl && !isLoadingScene && !isResolvingScene && !effectiveError && hasNoScenes && (
-        <NoSceneOverlay twinName={twinName} isTreeOpen={isTreeOpen} />
+        <NoSceneOverlay twinName={twinName} isTreeOpen={!dockSceneTree && isTreeOpen} />
       )}
 
       {/* ── Status bar (bottom) ──────────────────────────────────────────── */}
       <div
-        className="absolute bottom-0 left-0 right-0 z-10 flex items-center justify-between px-4 py-1.5"
+        className="absolute bottom-0 left-0 right-0 z-10 flex flex-wrap items-center justify-between gap-1 px-4 py-1.5 pointer-events-none"
         style={{
           background: 'rgba(10,10,18,0.7)',
           borderTop: '1px solid rgba(148,163,184,0.06)',
@@ -871,7 +952,7 @@ export function DigitalTwinViewer({
           </div>
           {effectiveModelUrl && anatomyMeshCount > 0 && (
             <span className="text-[10px] text-slate-400" aria-live="polite">
-              {anatomySourceGroupCount === 0
+              {scanMode ? (approvedCadOverlay ? 'As-built scan + verified CAD registration overlay · inspection only' : 'As-built exterior scan · ' + anatomyMeshCount.toLocaleString() + ' imported surfaces · no inferred internal parts') : anatomySourceGroupCount === 0
                 ? 'Inspecting imported geometry groups…'
                 : anatomySourceGroupCount === 1
                   ? anatomyMeshCount.toLocaleString() + ' mesh surfaces · one source geometry group; no explosion'
@@ -899,36 +980,17 @@ export function DigitalTwinViewer({
         </div>
       </div>
 
-      {/* ── Floating Toolbar (top center) ────────────────────────────────── */}
-      {showToolbar && (
-        <TwinToolbar
-          onResetCamera={resetCamera}
-          onScreenshot={handleScreenshot}
-          isFullscreen={isFullscreen}
-          onToggleFullscreen={handleToggleFullscreen}
-          viewMode={viewMode}
-          onViewModeChange={handleViewModeChange}
-          isTreeOpen={isTreeOpen}
-          anatomyGroupCount={anatomySourceGroupCount}
-          isIllustrativeDemo={isIllustrativeDemo}
-        />
-      )}
+      {!dockSceneTree && showToolbar && toolbar}
 
-      {/* ── Scene Tree Panel (left) ──────────────────────────────────────── */}
-      <SceneTreePanel
-        isOpen={isTreeOpen}
-        onToggle={handleToggleTree}
-        onMeshSelect={handleMeshSelectFromTree}
-        anatomyMeshes={anatomyMeshes}
-        anatomyTitle={isPrivateCad ? 'Private CAD · pending commissioning' :
-          isIllustrativeDemo ? 'Original illustrative CAD anatomy' : undefined}
-        suppressSceneFallback={isIllustrativeDemo}
-      />
+      {!dockSceneTree && sceneTree}
 
       {/* ── Component Info Panel (right) ─────────────────────────────────── */}
       {showInfoPanel && isInfoPanelOpen && selectedAssetId && (
         <ComponentInfoPanel isOpen={isInfoPanelOpen} />
       )}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

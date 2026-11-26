@@ -70,7 +70,9 @@ export async function runStagingReadiness({origin, fetcher=fetch, output=console
               status=0;
             }else{
               const denial=await response.json();
-              if(!denial || denial.error!=='Not authenticated') status=0;
+              const routeDenial=denial?.error==='Not authenticated';
+              const appProxyDenial=denial?.success===false && denial.error==='Authentication required';
+              if(!routeDenial && !appProxyDenial) status=0;
             }
           }catch{status=0;}
         }
@@ -87,7 +89,8 @@ export async function runStagingReadiness({origin, fetcher=fetch, output=console
             }
           }catch{status=0;}
         }
-        await response.body?.cancel();
+        // json() consumes the stream; cancelling an already locked stream throws.
+        if(!response.bodyUsed) await response.body?.cancel();
       } finally { clearTimeout(timeout); }
     } catch {
       status=0;

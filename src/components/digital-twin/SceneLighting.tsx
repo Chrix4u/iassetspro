@@ -2,7 +2,7 @@
 
 import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Environment } from '@react-three/drei';
+import { Environment, Lightformer } from '@react-three/drei';
 import * as THREE from 'three';
 
 // ============================================================================
@@ -20,18 +20,6 @@ export interface SceneLightingProps {
   directionalPosition?: [number, number, number];
   /** Whether shadows are enabled (default: true) */
   shadows?: boolean;
-  /** Environment preset name from drei (default: 'warehouse') */
-  environmentPreset?:
-    | 'warehouse'
-    | 'city'
-    | 'studio'
-    | 'dawn'
-    | 'sunset'
-    | 'night'
-    | 'forest'
-    | 'apartment'
-    | 'lobby'
-    | 'park';
   /** Whether to show the environment background (default: false) */
   showEnvironmentBackground?: boolean;
   /** Spotlight enabled (default: false) */
@@ -54,7 +42,6 @@ export function SceneLighting({
   directionalIntensity = 1.2,
   directionalPosition = [10, 15, 10] as [number, number, number],
   shadows = true,
-  environmentPreset = 'warehouse',
   showEnvironmentBackground = false,
   enableSpotlight = false,
   spotlightIntensity = 2,
@@ -162,13 +149,23 @@ export function SceneLighting({
         />
       )}
 
-      {/* ── HDRI Environment for reflections and ambient lighting ─────────── */}
+      {/* Local studio reflection rig: no remote HDRI request, including on
+          restricted factory networks. These lights are not machine geometry. */}
       <Environment
-        preset={environmentPreset}
+        resolution={128}
+        frames={1}
         background={showEnvironmentBackground}
         backgroundBlurriness={0.8}
         backgroundIntensity={0.4}
-      />
+      >
+        <color attach="background" args={['#555c68']} />
+        <Lightformer form="rect" intensity={4} color="#fffaf5"
+          position={[0, 6, 0]} rotation={[Math.PI / 2, 0, 0]} scale={[8, 5, 1]} />
+        <Lightformer form="rect" intensity={2} color="#dce8ff"
+          position={[-5, 2, 0]} rotation={[0, Math.PI / 2, 0]} scale={[4, 6, 1]} />
+        <Lightformer form="rect" intensity={1.5} color="#fff0da"
+          position={[0, 2, -5]} rotation={[0, 0, 0]} scale={[6, 4, 1]} />
+      </Environment>
     </>
   );
 }

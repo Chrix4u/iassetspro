@@ -193,6 +193,7 @@ const roleDefinitions = [
   { name: 'Quality Manager', slug: 'quality_manager', description: 'Quality inspections, NCR, audits, and calibration', level: 85, isSystem: false },
   { name: 'Safety Officer', slug: 'safety_officer', description: 'Full safety management including incidents and inspections', level: 75, isSystem: false },
   { name: 'HR Manager', slug: 'hr_manager', description: 'Full HRMS including employees, shifts, training, skills', level: 85, isSystem: false },
+  { name: 'Reliability Engineer', slug: 'reliability_engineer', description: 'Engineer-reviewed Digital Twin CAD, site scans, and verified machine-to-source mappings', level: 75, isSystem: false },
   { name: 'IoT Engineer', slug: 'iot_engineer', description: 'Full IoT device management and predictive analytics', level: 70, isSystem: false },
   { name: 'Viewer', slug: 'viewer', description: 'Read-only access across most modules', level: 10, isSystem: true },
 ];
@@ -253,6 +254,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'assets.view', 'assets.view_all', 'assets.create', 'assets.update', 'assets.delete',
     'assets.export', 'assets.manage', 'assets.hierarchy', 'assets.health', 'assets.criticality',
     'assets.hierarchy.view', 'assets.functional_locations.view', 'assets.functional_locations.assign',
+    'digital_twin.view', 'model_viewer.view', 'hotspots.view',
     'equipment.view', 'equipment.create', 'equipment.update',
     'assemblies.view', 'assemblies.create', 'assemblies.update', 'assemblies.manage',
     'bom.view', 'bom.create', 'bom.update', 'bom.manage',
@@ -305,6 +307,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'assets.view', 'assets.view_all', 'assets.create', 'assets.update',
     'assets.hierarchy', 'assets.health', 'assets.criticality',
     'assets.hierarchy.view', 'assets.functional_locations.view', 'assets.functional_locations.assign',
+    'digital_twin.view', 'model_viewer.view', 'hotspots.view',
     'equipment.view', 'equipment.create', 'equipment.update',
     'assemblies.view', 'assemblies.create', 'assemblies.update',
     'bom.view', 'bom.create', 'bom.update',
@@ -352,6 +355,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'assets.view', 'assets.view_all', 'assets.update',
     'assets.health', 'assets.criticality',
     'assets.hierarchy.view', 'assets.functional_locations.view',
+    'digital_twin.view', 'model_viewer.view', 'hotspots.view',
     'equipment.view', 'meters.view', 'meters.read', 'tools.view',
     'maintenance_requests.view', 'maintenance_requests.view_all',
     'maintenance_requests.update', 'maintenance_requests.approve', 'maintenance_requests.reject',
@@ -384,6 +388,7 @@ const rolePermissionBundles: Record<string, string[]> = {
     'documents.view', 'documents.download',
     'notifications.view',
     'assets.view', 'assets.view_own',
+    'digital_twin.view', 'model_viewer.view', 'hotspots.view',
     'equipment.view', 'meters.view', 'meters.read',
     'tools.view', 'tools.checkout', 'tools.return',
     'maintenance_requests.view_own',
@@ -563,6 +568,15 @@ const rolePermissionBundles: Record<string, string[]> = {
   ],
 
   // ── 15. IOT ENGINEER ──
+  reliability_engineer: [
+    'dashboard.view', 'chat.view', 'documents.view', 'documents.download',
+    'assets.view', 'assets.view_all', 'equipment.view',
+    'assemblies.view', 'bom.view', 'parts.view', 'meters.view',
+    'maintenance_requests.view', 'work_orders.view', 'pm_schedules.view',
+    'digital_twin.view', 'digital_twin.manage',
+    'model_viewer.view', 'hotspots.view', 'reports.view',
+  ],
+
   iot_engineer: [
     'dashboard.view', 'chat.view',
     'documents.view', 'documents.upload', 'documents.download',

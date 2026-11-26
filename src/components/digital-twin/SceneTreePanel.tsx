@@ -49,6 +49,7 @@ interface TreeNode {
 export interface SceneTreePanelProps {
   /** Whether the panel is visible */
   isOpen?: boolean;
+  docked?: boolean;
   /** Callback to toggle panel visibility */
   onToggle?: () => void;
   /** Callback when a mesh is selected from the tree */
@@ -334,6 +335,7 @@ function TreeNodeItem({
 
 export function SceneTreePanel({
   isOpen = true,
+  docked = false,
   onToggle,
   onMeshSelect,
   treeData: externalTreeData,
@@ -461,7 +463,7 @@ export function SceneTreePanel({
   // Collapsed state — show only toggle button
   if (!isOpen) {
     return (
-      <div className="absolute top-3 left-3 z-30">
+      <div className={docked ? "flex h-full items-start justify-center p-1.5" : "absolute top-3 left-3 z-30"}>
         <TooltipProvider delayDuration={0}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -469,6 +471,7 @@ export function SceneTreePanel({
                 variant="ghost"
                 size="icon"
                 onClick={onToggle}
+                aria-label="Expand CAD anatomy tree"
                 className="h-8 w-8 rounded-lg text-slate-300 hover:text-white hover:bg-white/10"
                 style={{
                   background: 'rgba(15,15,25,0.8)',
@@ -490,9 +493,9 @@ export function SceneTreePanel({
 
   return (
     <div
-      className="absolute top-0 left-0 z-20 h-full flex flex-col"
+      className={docked ? "relative h-full min-h-0 min-w-0 flex flex-col overflow-hidden" : "absolute top-0 left-0 z-20 h-full flex flex-col"}
       style={{
-        width: '280px',
+        width: docked ? '100%' : '280px',
         background: 'rgba(10,10,18,0.92)',
         borderRight: '1px solid rgba(148,163,184,0.1)',
         backdropFilter: 'blur(16px)',
@@ -514,6 +517,7 @@ export function SceneTreePanel({
             variant="ghost"
             size="icon"
             onClick={onToggle}
+            aria-label="Collapse CAD anatomy tree"
             className="h-6 w-6 text-slate-400 hover:text-slate-200"
           >
             <PanelLeftClose className="h-3.5 w-3.5" />
@@ -583,7 +587,7 @@ export function SceneTreePanel({
       </div>
 
       {/* Tree */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1">
         <div className="py-1">
           {filteredTree.length > 0 ? (
             filteredTree.map(node => (

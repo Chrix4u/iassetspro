@@ -51,6 +51,8 @@ test.describe('CORE offline PWA platform', () => {
 
   test('keeps a persistent stale-data warning until each cached endpoint refreshes live', async ({ page }) => {
     await page.goto('/');
+    // The page can be visible before React hydrates and subscribes to cache events.
+    await expect(page.locator('html')).toHaveAttribute('data-offline-cache-listener-ready', 'true', { timeout: 20_000 });
 
     await page.evaluate(() => {
       window.dispatchEvent(new CustomEvent('iassetspro:offline-cache-state', {

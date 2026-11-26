@@ -14,6 +14,17 @@ describe('functional-location Phase 2 UI contract', () => {
     expect(existsSync(pickerPath)).toBe(true)
   })
 
+  it('uses stable draft identities and keeps the create action outside the scrolling form', () => {
+    const source = readFileSync(hierarchyPagePath, 'utf8')
+    expect(source).toContain('key={level.draftId}')
+    expect(source).not.toContain('key={`${index}-${level.label}`}')
+    expect(source).toContain('nextLevelDraftId.current++')
+    expect(source).toContain("width: 'calc(100dvw - 32px)', maxWidth: 'min(760px, calc(100dvw - 32px))', minWidth: 0, maxHeight: 'calc(100dvh - 32px)', boxSizing: 'border-box'")
+    expect(source).toContain('data-testid="hierarchy-system-body" className="min-h-0 flex-1')
+    expect(source).toContain('data-testid="hierarchy-system-footer" className="shrink-0')
+    expect(source).toContain('.map(({ label, codePrefix, isRequired, allowAssetAssignment })')
+  })
+
   it('loads hierarchy systems, functional locations, and coded location paths', () => {
     const source = readFileSync(hierarchyPagePath, 'utf8')
     expect(source).toContain("/api/hierarchy-systems")

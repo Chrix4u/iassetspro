@@ -10,15 +10,25 @@ import {
 } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
+import { Html } from '@react-three/drei';
 import { InteractiveMesh, type AssetMeshBinding } from './InteractiveMesh';
 import { buildImportedNodePaths, cloneImportedAnatomyMesh } from './anatomyModelMesh';
 import { matchImportedMeshBinding, type ImportedAnatomyMesh } from './anatomyBindings';
 import { useDigitalTwinStore } from '@/stores/digitalTwinStore';
+import { getAuthHeaders } from '@/lib/api';
+import { allowSharedGltfCache, fetchPrivateModelBytes } from '@/lib/smart-anatomy/private-model-client';
 
 // ============================================================================
 // Types
 // ============================================================================
 
+export interface ScanOverlayHotspot {
+  id:string;componentId:string;label:string;isApproved:boolean;
+  position:{x:number;y:number;z:number};
+}
+export interface ScanSurfacePick {
+  position:{x:number;y:number;z:number};sourceMeshPath:string;
+}
 export interface ModelLoaderProps {
   /** URL of the GLTF/GLB model to load */
   modelUrl: string | null;
@@ -42,6 +52,14 @@ export interface ModelLoaderProps {
   onMeshCount?: (count: number) => void;
   /** Exact imported glTF nodes, not inferred or generated machine anatomy. */
   onAnatomyManifest?: (meshes: ImportedAnatomyMesh[]) => void;
+  scanMode?:boolean;
+  scanHotspots?:ScanOverlayHotspot[];
+  onScanSurfacePick?:(value:ScanSurfacePick)=>void;
+  onScanHotspotSelect?:(componentId:string)=>void;
+  /** CAD registration geometry inherits the source scan's *same* model-local frame. */
+  modelLocalChildren?: ReactNode;
+  /** Optional translucent verified CAD overlay; never changes source geometry. */
+  displayOpacity?:number;
   /** Children rendered after the model */
   children?: ReactNode;
 }
@@ -142,9 +160,12 @@ function useGLTFLoader(
     }
 
     let cancelled = false;
+    const shareable = allowSharedGltfCache(modelUrl);
+    let privateSourceScene: THREE.Group | null = null;
+    const privateRequest = shareable ? null : new AbortController();
 
     // Check cache first
-    const cached = acquireFromCache(modelUrl);
+    const cached = shareable ? acquireFromCache(modelUrl) : null;
     if (cached) {
       setScene(cached);
       setError(null);
@@ -166,6 +187,7 @@ function useGLTFLoader(
     }
 
     // Dynamic import of GLTFLoader to avoid SSR issues
+    setScene(null);
     setIsLoading(true);
     setError(null);
     // CRITICAL: Defer callbacks — see above for rationale.
@@ -205,10 +227,11 @@ function useGLTFLoader(
           }
         }, 200);
 
-        gltfLoader.load(
-          modelUrl,
-          (gltf) => {
-            if (cancelled) return;
+        const onLoaded = (gltf: Awaited<ReturnType<typeof gltfLoader.parseAsync>>) => {
+            if (cancelled) {
+              if (!shareable) disposeScene(gltf.scene);
+              return;
+            }
 
             if (progressInterval) clearInterval(progressInterval);
             // CRITICAL: Defer callbacks — see cache hit path for rationale.
@@ -219,17 +242,20 @@ function useGLTFLoader(
               }
             }, 0);
 
-            // Store in cache
-            gltfCache.set(getCacheKey(modelUrl), {
-              scene: gltf.scene,
-              refCount: 1,
-              url: modelUrl,
-            });
-
+            // Public models can reuse geometry while referenced. Proprietary
+            // plant scans / manufacturer CAD must be disposed at viewer exit
+            // and reauthorized on every subsequent machine navigation.
+            if (shareable) {
+              gltfCache.set(getCacheKey(modelUrl), {
+                scene: gltf.scene, refCount: 1, url: modelUrl,
+              });
+            } else {
+              privateSourceScene = gltf.scene;
+            }
             setScene(gltf.scene.clone(true));
             setIsLoading(false);
-          },
-          (event) => {
+        };
+        const onProgress = (event: ProgressEvent) => {
             if (cancelled) return;
             if (event.lengthComputable && event.total > 0) {
               const pct = Math.round((event.loaded / event.total) * 95);
@@ -239,8 +265,8 @@ function useGLTFLoader(
                 if (!cancelled) onProgressRef.current?.(pct);
               }, 0);
             }
-          },
-          (err) => {
+        };
+        const onLoadError = (err: unknown) => {
             if (cancelled) return;
             if (progressInterval) clearInterval(progressInterval);
 
@@ -253,10 +279,19 @@ function useGLTFLoader(
             setTimeout(() => {
               if (!cancelled) onErrorRef.current?.(errorObj);
             }, 0);
-          },
-        );
+        };
+        if (privateRequest) {
+          // Bypass Three FileLoader: its URL-keyed cache and in-flight request
+          // coalescing do not distinguish users or selected plants.
+          const bytes = await fetchPrivateModelBytes(modelUrl, getAuthHeaders(), privateRequest.signal);
+          if (cancelled) return;
+          onLoaded(await gltfLoader.parseAsync(bytes, ""));
+        } else {
+          gltfLoader.load(modelUrl, onLoaded, onProgress, onLoadError);
+        }
       } catch (importErr) {
         if (cancelled) return;
+        if (progressInterval) clearInterval(progressInterval);
         const errorObj = new Error(
           `Failed to initialize GLTF loader: ${
             importErr instanceof Error ? importErr.message : String(importErr)
@@ -280,9 +315,11 @@ function useGLTFLoader(
       }
       // GLTFLoader does not expose a supported abort API here. The cancelled flag
       // prevents late loader callbacks from mutating React state after unmount.
+      privateRequest?.abort();
       loaderRef.current = null;
-      // Release cache reference on unmount
-      releaseToCache(modelUrl);
+      // Never retain uploaded private CAD across user/plant/account switches.
+      if (shareable) releaseToCache(modelUrl);
+      else if (privateSourceScene) disposeScene(privateSourceScene);
     };
   }, [modelUrl]);
 
@@ -442,6 +479,12 @@ function PerformanceMonitor({ enabled }: { enabled: boolean }) {
 // ============================================================================
 
 interface ProcessedModelProps {
+  modelLocalChildren?: ReactNode;
+  displayOpacity?: number;
+  scanMode?:boolean;
+  scanHotspots?:ScanOverlayHotspot[];
+  onScanSurfacePick?:(value:ScanSurfacePick)=>void;
+  onScanHotspotSelect?:(componentId:string)=>void;
   scene: THREE.Group;
   bindings: AssetMeshBinding[];
   onMeshCount?: (count: number) => void;
@@ -454,6 +497,12 @@ interface ProcessedModelProps {
 function ProcessedModel({
   scene,
   bindings,
+  scanMode=false,
+  scanHotspots=[],
+  onScanSurfacePick,
+  onScanHotspotSelect,
+  modelLocalChildren,
+  displayOpacity=1,
   onMeshCount,
   onAnatomyManifest,
   maxDimension,
@@ -484,6 +533,16 @@ function ProcessedModel({
       if (!(child as THREE.Mesh).isMesh) return;
       const originalMesh = child as THREE.Mesh;
       const mesh = cloneImportedAnatomyMesh(originalMesh, scene, sourcePaths.get(originalMesh), true);
+      if(displayOpacity < 1){
+        // Only cloned display materials are modified, never the cached CAD
+        // source or its underlying imported texture/geometry assets.
+        const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material];
+        for(const material of materials){
+          material.transparent=true;
+          material.opacity*=Math.max(0.05,Math.min(1,displayOpacity));
+          material.depthWrite=false;
+        }
+      }
 
       // Engineer-approved source path takes precedence. A duplicated CAD name
       // is never an authoritative PM target unless its exact path is mapped.
@@ -499,7 +558,7 @@ function ProcessedModel({
     });
 
     return { interactiveMeshes: interactive, staticMeshes: staticList };
-  }, [scene, bindings]);
+  }, [scene, bindings, displayOpacity]);
 
   const anatomyManifest = useMemo<ImportedAnatomyMesh[]>(() => [
     ...interactiveMeshes.map(({mesh,binding})=>({
@@ -599,12 +658,33 @@ function ProcessedModel({
             onClick={event=>{
               event.stopPropagation();
               const path=String(mesh.userData.__iAssetsSourceNodePath || mesh.name);
+              if(onScanSurfacePick && groupRef.current){
+                // Store model-local metres, not world/camera/scaled coordinates.
+                const point=groupRef.current.worldToLocal(event.point.clone());
+                const selection:ScanSurfacePick={position:{x:point.x,y:point.y,z:point.z},sourceMeshPath:path};
+                setTimeout(()=>onScanSurfacePick(selection),0);
+                return;
+              }
               setTimeout(()=>useDigitalTwinStore.getState().selectMesh(path, ''),0);
             }}
             castShadow
             receiveShadow
           />
         ))}
+        {scanMode && scanHotspots.map(marker=>(
+          <Html key={marker.id}
+            position={[marker.position.x,marker.position.y,marker.position.z]}
+            center distanceFactor={15} style={{pointerEvents:'auto'}}>
+            <button type="button" aria-label={`Inspect scan hotspot: ${marker.label}`}
+              className={`max-w-44 truncate rounded-full border px-2 py-1.5 text-[11px] font-semibold shadow-lg cursor-pointer ${marker.isApproved
+                ? 'border-emerald-300 bg-emerald-950/95 text-emerald-100'
+                : 'border-amber-300 bg-amber-950/95 text-amber-100'}`}
+              onClick={event=>{event.stopPropagation();setTimeout(()=>onScanHotspotSelect?.(marker.componentId),0);}}>
+              {marker.isApproved?'●':'○'} {marker.label}
+            </button>
+          </Html>
+        ))}
+        {modelLocalChildren}
       </group>
 
       {/* LOD Manager — headless component that toggles visibility */}
@@ -667,6 +747,12 @@ export function ModelLoader({
   bindings: externalBindings,
   onMeshCount,
   onAnatomyManifest,
+  scanMode=false,
+  scanHotspots,
+  onScanSurfacePick,
+  onScanHotspotSelect,
+  modelLocalChildren,
+  displayOpacity=1,
   children,
 }: ModelLoaderProps) {
   const [localError, setLocalError] = useState<string | null>(null);
@@ -753,6 +839,12 @@ export function ModelLoader({
         bindings={bindings}
         onMeshCount={onMeshCount}
         onAnatomyManifest={onAnatomyManifest}
+        scanMode={scanMode}
+        scanHotspots={scanHotspots}
+        onScanSurfacePick={onScanSurfacePick}
+        onScanHotspotSelect={onScanHotspotSelect}
+        modelLocalChildren={modelLocalChildren}
+        displayOpacity={displayOpacity}
         maxDimension={maxDimension}
         autoCenter={autoCenter}
         autoScale={autoScale}

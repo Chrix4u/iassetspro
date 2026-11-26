@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Building2,
@@ -79,6 +79,7 @@ type AssetNode = { id: string; name: string; assetTag: string; parentId?: string
 type LocationPathNode = { id: string; name: string; locationCode: string; depth: number; hierarchyLevelId: string }
 
 type LevelDraft = {
+  draftId: number
   label: string
   codePrefix: string
   isRequired: boolean
@@ -86,11 +87,11 @@ type LevelDraft = {
 }
 
 const defaultLevels: LevelDraft[] = [
-  { label: 'Company', codePrefix: 'CO', isRequired: true, allowAssetAssignment: false },
-  { label: 'Site / Plant', codePrefix: 'PL', isRequired: true, allowAssetAssignment: false },
-  { label: 'Area', codePrefix: 'AR', isRequired: false, allowAssetAssignment: false },
-  { label: 'Line / System', codePrefix: 'LN', isRequired: false, allowAssetAssignment: false },
-  { label: 'Functional Location', codePrefix: 'FL', isRequired: true, allowAssetAssignment: true },
+  { draftId: 1, label: 'Company', codePrefix: 'CO', isRequired: true, allowAssetAssignment: false },
+  { draftId: 2, label: 'Site / Plant', codePrefix: 'PL', isRequired: true, allowAssetAssignment: false },
+  { draftId: 3, label: 'Area', codePrefix: 'AR', isRequired: false, allowAssetAssignment: false },
+  { draftId: 4, label: 'Line / System', codePrefix: 'LN', isRequired: false, allowAssetAssignment: false },
+  { draftId: 5, label: 'Functional Location', codePrefix: 'FL', isRequired: true, allowAssetAssignment: true },
 ]
 
 function LocationTreeNode({
@@ -221,6 +222,7 @@ export default function FunctionalLocationHierarchyPage() {
   const [legacyMigrationOpen, setLegacyMigrationOpen] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  const nextLevelDraftId = useRef(defaultLevels.length + 1)
   const [systemForm, setSystemForm] = useState({
     name: 'Primary Plant Structure',
     code: 'PRIMARY',
@@ -402,7 +404,7 @@ export default function FunctionalLocationHierarchyPage() {
       toast.error('Hierarchy name and code are required')
       return
     }
-    const levels = systemForm.levels.filter(level => level.label.trim())
+    const levels = systemForm.levels.filter(level => level.label.trim()).map(({ label, codePrefix, isRequired, allowAssetAssignment }) => ({ label, codePrefix, isRequired, allowAssetAssignment }))
     if (levels.length === 0) {
       toast.error('Add at least one hierarchy level')
       return
@@ -467,7 +469,7 @@ export default function FunctionalLocationHierarchyPage() {
     }
   }
 
-  const updateLevelDraft = (index: number, patch: Partial<LevelDraft>) => {
+  const updateLevelDraft = (index: number, patch: Partial<Omit<LevelDraft, 'draftId'>>) => {
     setSystemForm(current => ({
       ...current,
       levels: current.levels.map((level, levelIndex) => levelIndex === index ? { ...level, ...patch } : level),
@@ -599,18 +601,39 @@ export default function FunctionalLocationHierarchyPage() {
       )}
 
       <Dialog open={systemDialogOpen} onOpenChange={setSystemDialogOpen}>
-        <DialogContent className="max-h-[94dvh] overflow-hidden sm:max-w-6xl xl:max-w-7xl">
-          <DialogHeader><DialogTitle>Build hierarchy system</DialogTitle><DialogDescription>Define the labels and Location Code rules your company actually uses. You are not limited to Plant / Department / Area.</DialogDescription></DialogHeader>
-          <div className="max-h-[78dvh] space-y-5 overflow-y-auto pr-2">
+        <DialogContent data-testid="hierarchy-system-dialog" style={{ width: 'calc(100dvw - 32px)', maxWidth: 'min(760px, calc(100dvw - 32px))', minWidth: 0, maxHeight: 'calc(100dvh - 32px)', boxSizing: 'border-box' }} className="flex min-h-0 min-w-0 flex-col gap-0 overflow-hidden p-0 sm:p-0">
+          <DialogHeader className="shrink-0 border-b px-4 py-3 pr-10 sm:px-5 sm:pr-10"><DialogTitle>Build hierarchy system</DialogTitle><DialogDescription>Define the labels and Location Code rules your company actually uses. You are not limited to Plant / Department / Area.</DialogDescription></DialogHeader>
+          <div data-testid="hierarchy-system-body" className="min-h-0 flex-1 min-w-0 space-y-4 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-3 sm:px-5">
             <div className="grid gap-3 sm:grid-cols-2"><div><Label>Name</Label><Input className="mt-1.5" value={systemForm.name} onChange={event => setSystemForm(current => ({ ...current, name: event.target.value }))} placeholder="e.g. Primary Plant Structure" /></div><div><Label>System code</Label><Input className="mt-1.5 font-mono" value={systemForm.code} onChange={event => setSystemForm(current => ({ ...current, code: event.target.value.toUpperCase() }))} placeholder="PRIMARY" /></div></div>
             <div><Label>Description</Label><Textarea className="mt-1.5" value={systemForm.description} onChange={event => setSystemForm(current => ({ ...current, description: event.target.value }))} placeholder="How this hierarchy is used..." /></div>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div><Label>Purpose</Label><Select value={systemForm.purpose} onValueChange={value => setSystemForm(current => ({ ...current, purpose: value }))}><SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="functional_location">Functional Location</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="process">Process</SelectItem><SelectItem value="utilities">Utilities</SelectItem><SelectItem value="facilities">Facilities</SelectItem><SelectItem value="custom">Custom</SelectItem></SelectContent></Select></div><div><Label>Code mode</Label><Select value={systemForm.codeMode} onValueChange={value => setSystemForm(current => ({ ...current, codeMode: value as 'manual' | 'generated' | 'mixed' }))}><SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="manual">Manual Location Code</SelectItem><SelectItem value="generated">Generated from segments</SelectItem><SelectItem value="mixed">Mixed</SelectItem></SelectContent></Select></div><div><Label>Separator</Label><Select value={systemForm.separator} onValueChange={value => setSystemForm(current => ({ ...current, separator: value }))}><SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger><SelectContent>{['-', '_', '.', '/', ':'].map(separator => <SelectItem key={separator} value={separator}>{separator}</SelectItem>)}</SelectContent></Select></div><div className="flex items-end"><label className="flex h-10 w-full items-center justify-between rounded-md border px-3 text-sm"><span>Primary system</span><Switch checked={systemForm.isPrimary} onCheckedChange={checked => setSystemForm(current => ({ ...current, isPrimary: checked }))} /></label></div></div>
+            <div className="grid min-w-0 gap-3 sm:grid-cols-2"><div><Label>Purpose</Label><Select value={systemForm.purpose} onValueChange={value => setSystemForm(current => ({ ...current, purpose: value }))}><SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="functional_location">Functional Location</SelectItem><SelectItem value="electrical">Electrical</SelectItem><SelectItem value="process">Process</SelectItem><SelectItem value="utilities">Utilities</SelectItem><SelectItem value="facilities">Facilities</SelectItem><SelectItem value="custom">Custom</SelectItem></SelectContent></Select></div><div><Label>Code mode</Label><Select value={systemForm.codeMode} onValueChange={value => setSystemForm(current => ({ ...current, codeMode: value as 'manual' | 'generated' | 'mixed' }))}><SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="manual">Manual Location Code</SelectItem><SelectItem value="generated">Generated from segments</SelectItem><SelectItem value="mixed">Mixed</SelectItem></SelectContent></Select></div><div><Label>Separator</Label><Select value={systemForm.separator} onValueChange={value => setSystemForm(current => ({ ...current, separator: value }))}><SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger><SelectContent>{['-', '_', '.', '/', ':'].map(separator => <SelectItem key={separator} value={separator}>{separator}</SelectItem>)}</SelectContent></Select></div><div className="flex items-end"><label className="flex h-10 w-full items-center justify-between rounded-md border px-3 text-sm"><span>Primary system</span><Switch checked={systemForm.isPrimary} onCheckedChange={checked => setSystemForm(current => ({ ...current, isPrimary: checked }))} /></label></div></div>
             <div>
-              <div className="mb-2 flex items-center justify-between"><div><Label>Hierarchy levels</Label><p className="text-xs text-muted-foreground">Add, remove and order the labels before creating this system.</p></div><Button type="button" variant="outline" size="sm" onClick={() => setSystemForm(current => ({ ...current, levels: [...current.levels, { label: 'New Level', codePrefix: '', isRequired: false, allowAssetAssignment: false }] }))}><Plus className="mr-1 h-3.5 w-3.5" />Level</Button></div>
-              <div className="space-y-2">{systemForm.levels.map((level, index) => <div key={`${index}-${level.label}`} className="grid gap-2 rounded-lg border p-3 xl:grid-cols-[2rem_minmax(12rem,1.4fr)_6rem_auto_auto_auto] xl:items-center"><div className="flex flex-col gap-1"><Button type="button" variant="ghost" size="icon" className="h-6 w-6" disabled={index === 0} onClick={() => moveLevel(index, -1)}>↑</Button><Button type="button" variant="ghost" size="icon" className="h-6 w-6" disabled={index === systemForm.levels.length - 1} onClick={() => moveLevel(index, 1)}>↓</Button></div><Input value={level.label} onChange={event => updateLevelDraft(index, { label: event.target.value })} placeholder="Level label" /><Input value={level.codePrefix} onChange={event => updateLevelDraft(index, { codePrefix: event.target.value.toUpperCase() })} placeholder="Prefix" className="font-mono" /><label className="flex items-center gap-2 text-xs"><Switch checked={level.isRequired} onCheckedChange={checked => updateLevelDraft(index, { isRequired: checked })} />Required</label><label className="flex items-center gap-2 text-xs"><Switch checked={level.allowAssetAssignment} onCheckedChange={checked => updateLevelDraft(index, { allowAssetAssignment: checked })} />Asset-ready</label><Button type="button" variant="ghost" size="icon" disabled={systemForm.levels.length === 1} onClick={() => setSystemForm(current => ({ ...current, levels: current.levels.filter((_, levelIndex) => levelIndex !== index) }))}><X className="h-4 w-4" /></Button></div>)}</div>
+              <div className="mb-2 flex items-center justify-between"><div><Label>Hierarchy levels</Label><p className="text-xs text-muted-foreground">Add, remove and order the labels before creating this system.</p></div><Button type="button" variant="outline" size="sm" onClick={() => { const draftId = nextLevelDraftId.current++; setSystemForm(current => ({ ...current, levels: [...current.levels, { draftId, label: 'New Level', codePrefix: '', isRequired: false, allowAssetAssignment: false }] })) }}><Plus className="mr-1 h-3.5 w-3.5" />Level</Button></div>
+              <div className="space-y-2">
+                {systemForm.levels.map((level, index) => (
+                  <div key={level.draftId} data-testid="hierarchy-level-row" className="min-w-0 space-y-2 rounded-lg border p-2.5">
+                    <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2">
+                      <span className="w-6 text-center text-xs font-semibold text-muted-foreground">{index + 1}</span>
+                      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_minmax(3.5rem,5rem)] gap-2">
+                        <Input aria-label={`Level ${index + 1} label`} value={level.label} onChange={event => updateLevelDraft(index, { label: event.target.value })} placeholder="Level label" />
+                        <Input aria-label={`Level ${index + 1} prefix`} value={level.codePrefix} onChange={event => updateLevelDraft(index, { codePrefix: event.target.value.toUpperCase() })} placeholder="Prefix" className="min-w-0 font-mono" />
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        <Button type="button" variant="ghost" size="icon" className="h-8 w-7" aria-label={`Move level ${index + 1} up`} disabled={index === 0} onClick={() => moveLevel(index, -1)}>↑</Button>
+                        <Button type="button" variant="ghost" size="icon" className="h-8 w-7" aria-label={`Move level ${index + 1} down`} disabled={index === systemForm.levels.length - 1} onClick={() => moveLevel(index, 1)}>↓</Button>
+                        <Button type="button" variant="ghost" size="icon" className="h-8 w-7" aria-label={`Remove level ${index + 1}`} disabled={systemForm.levels.length === 1} onClick={() => setSystemForm(current => ({ ...current, levels: current.levels.filter((_, levelIndex) => levelIndex !== index) }))}><X className="h-4 w-4" /></Button>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 pl-1 sm:pl-8">
+                      <label className="flex items-center gap-2 text-xs"><Switch checked={level.isRequired} onCheckedChange={checked => updateLevelDraft(index, { isRequired: checked })} />Required</label>
+                      <label className="flex items-center gap-2 text-xs"><Switch checked={level.allowAssetAssignment} onCheckedChange={checked => updateLevelDraft(index, { allowAssetAssignment: checked })} />Asset-ready</label>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => setSystemDialogOpen(false)}>Cancel</Button><Button onClick={saveSystem} disabled={saving}>{saving ? 'Creating...' : 'Create hierarchy system'}</Button></DialogFooter>
+          <DialogFooter data-testid="hierarchy-system-footer" className="shrink-0 flex-row flex-wrap justify-end border-t bg-background px-4 py-3 sm:px-5"><Button variant="outline" disabled={saving} onClick={() => setSystemDialogOpen(false)}>Cancel</Button><Button onClick={saveSystem} disabled={saving}>{saving ? 'Creating...' : 'Create hierarchy system'}</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

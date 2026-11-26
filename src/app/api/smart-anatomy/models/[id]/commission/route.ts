@@ -156,10 +156,19 @@ export async function POST(
         component: { select: { assetId: true } },
       },
     });
-    if (!verifiedBindings.length) {
+    if (!verifiedBindings.length && claimOrigin !== 'site-owned-scan') {
       return NextResponse.json({
         success: false, error: 'Link at least one exact CAD node to a registered component before commissioning',
       }, { status: 409 });
+    }
+
+    // As-built scan geometry must NOT be labelled as OEM part geometry.
+    if (claimOrigin === 'site-owned-scan' && verifiedBindings.length) {
+      return NextResponse.json({success:false,error:'Use spatial scan hotspots for actual parts; scan mesh nodes cannot be engineering CAD bindings'},{status:409});
+    }
+    if (claimOrigin === 'site-owned-scan' &&
+        (body?.scanCapturedMachineVerified !== true || body?.scanScaleReviewed !== true)) {
+      return NextResponse.json({success:false,error:'Independently verify the physical scanned machine and measured metre scale'},{status:409});
     }
 
     // Review checkboxes alone are insufficient. All maintenance-authoritative
@@ -176,12 +185,12 @@ export async function POST(
       }
       mappedPaths.add(binding.meshPath);
     }
-    const linkedComponents = verifiedBindings.length;
+    let linkedComponents = verifiedBindings.length;
     const unmappedSourcePaths = importedPaths.size - mappedPaths.size;
     // A multi-part OEM assembly can contain unmaintainable decorative
     // geometry. It may remain visual-only, but the engineer must see and
     // acknowledge partial source coverage before approving the revision.
-    if (unmappedSourcePaths > 0 && body?.unmappedNodesAcknowledged !== true) {
+    if (claimOrigin !== 'site-owned-scan' && unmappedSourcePaths > 0 && body?.unmappedNodesAcknowledged !== true) {
       return NextResponse.json({
         success: false,
         error: `CAD contains ${unmappedSourcePaths} unmapped source meshes. Engineer must acknowledge they are visual-only until linked.`,
@@ -223,6 +232,23 @@ export async function POST(
       });
       if (bindingFingerprint(lockedBindings) !== reviewedFingerprint) {
         return { status: 'bindings-changed' as const };
+      }
+
+      // Scan visual hotspots link genuine registered parts by their surface
+      // position; they do not assert hidden source CAD mesh equivalence.
+      if (claimOrigin === 'site-owned-scan') {
+        const points = await tx.siteScanHotspot.findMany({where:{
+          modelId:id,assetId:model.assetId,isApproved:true,
+        },select:{id:true,createdById:true,reviewedById:true,
+          component:{select:{assetId:true,lifecycleStatus:true}}},take:120});
+        if (!points.length || points.some(point =>
+          !point.reviewedById || point.createdById===point.reviewedById ||
+          point.reviewedById===model.uploadedById ||
+          point.component.assetId!==model.assetId ||
+          point.component.lifecycleStatus==='uncommissioned')) {
+          return {status:'scan-hotspots-missing' as const};
+        }
+        linkedComponents=points.length;
       }
 
       // Converted licensed OEM CAD must have its actual original source
@@ -267,7 +293,11 @@ export async function POST(
             independentEngineerReview: true,
             reviewNote: note, sourceReviewed: true,
             geometryReviewed: true, componentMappingReviewed: true,
-            linkedComponents, importedMeshPaths: importedPaths.size,
+            linkedComponents, sourceGeometryKind: claimOrigin === 'site-owned-scan' ? 'as-built-exterior-surfaces' : 'engineering-cad',
+            scanCapturedMachineVerified: claimOrigin === 'site-owned-scan' ? true : null,
+            scanScaleReviewed: claimOrigin === 'site-owned-scan' ? true : null,
+            linkedScanHotspots: claimOrigin === 'site-owned-scan' ? linkedComponents : null,
+            importedMeshPaths: importedPaths.size,
             exactSourcePathMatches: mappedPaths.size,
             unmappedSourceMeshCount: unmappedSourcePaths,
             mappingCoveragePercent: Math.round(10000 * mappedPaths.size / importedPaths.size) / 100,
@@ -297,6 +327,9 @@ export async function POST(
       return NextResponse.json({
         success:false,error:'CAD was approved by another engineer; refresh the review state',
       }, {status:409});
+    }
+    if (outcome.status==='scan-hotspots-missing') {
+      return NextResponse.json({success:false,error:'At least one independently approved physical site-scan hotspot linked to a commissioned part is required'},{status:409});
     }
     if (outcome.status==='source-not-verified') {
       return NextResponse.json({

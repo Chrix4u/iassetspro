@@ -63,6 +63,31 @@ describe('Smart Anatomy private CAD binary validation', () => {
       .toBe(1);
   });
 
+  it('refuses GLBs that require decoder services not installed in the on-prem viewer', () => {
+    for (const extension of [
+      'KHR_draco_mesh_compression', 'EXT_meshopt_compression', 'KHR_texture_basisu',
+    ]) {
+      const json = {
+        asset: {version:'2.0'},
+        nodes: [{mesh:0}],
+        meshes: [{primitives:[{attributes:{POSITION:0}}]}],
+        accessors: [{count:3}],
+        extensionsUsed: [extension],
+        extensionsRequired: [extension],
+      };
+      expect(() => inspectSelfContainedGlb(fixture(json)))
+        .toThrow('unsupported compressed extension ' + extension);
+    }
+    // An optional, non-required extension with standard geometry fallback
+    // remains permissible and never triggers an unknown network decoder.
+    expect(inspectSelfContainedGlb(fixture({
+      asset:{version:'2.0'},nodes:[{mesh:0}],
+      meshes:[{primitives:[{attributes:{POSITION:0}}]}],
+      accessors:[{count:3}],extensionsUsed:['KHR_mesh_quantization'],
+      extensionsRequired:['KHR_mesh_quantization'],
+    })).meshCount).toBe(1);
+  });
+
   it('rejects tampered BIN chunk sizes and unsupported extra chunks', () => {
     const wrong = Buffer.from(pump());
     const jsonLength = wrong.readUInt32LE(12);

@@ -352,6 +352,22 @@ jobs:
       - name: Generate Prisma client
         run: bunx prisma generate
 
+      # Proprietary CAD and scans require owner-only non-webroot storage.
+      # This CI directory is ephemeral, has no external network mount, and
+      # must never be confused with customer CAD evidence or an offsite backup.
+      - name: Provision private CAD storage for isolated Repairs UAT
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/iassetspro-private-cad-uat"
+          mkdir -p "$root"
+          chmod 0700 "$root"
+          echo "IASSETSPRO_CAD_STORAGE_ROOT=$root" >> "$GITHUB_ENV"
+          stat -c '%a %U' "$root"
+
+      - name: Verify owner-only CAD storage in isolated Repairs UAT
+        run: node scripts/smart-anatomy/check-private-cad-storage.mjs
+
       - name: Apply PostgreSQL baseline migration to isolated UAT database
         run: |
           bunx prisma migrate deploy
@@ -418,6 +434,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     needs: [build, container-build]
+    # Each shard has its own fresh PostgreSQL/Redis services and runs the
+    # same tested standalone artifact. All shards must pass the final gate.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
 
     services:
       postgres:
@@ -518,13 +540,13 @@ jobs:
         run: bash scripts/smart-anatomy/install-ci-chromium.sh
 
       - name: Run platform Playwright E2E (Chromium only)
-        run: bun run test:e2e --project=chromium
+        run: bun run test:e2e --project=chromium --shard=${{ matrix.shard }}/3
 
       - name: Upload Playwright test results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: playwright-results
+          name: playwright-results-${{ matrix.shard }}
           path: |
             playwright-report/
             test-results/
@@ -534,7 +556,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: playwright-html-report
+          name: playwright-html-report-${{ matrix.shard }}
           path: playwright-report/
           retention-days: 30
 

@@ -13,7 +13,8 @@ export async function GET(
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'digital_twin.view') && !isAdmin(session)) {
+    const manager = isAdmin(session) || hasPermission(session, 'digital_twin.manage');
+    if (!manager && !hasPermission(session, 'digital_twin.view')) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -43,6 +44,9 @@ export async function GET(
     }
     if (!canAccessPlantStrict(plantScope, model.asset.plantId)) {
       return NextResponse.json({ success: false, error: 'Access denied' }, { status: 403 });
+    }
+    if (!model.isActive && !manager) {
+      return NextResponse.json({ success: false, error: 'Unapproved model details are restricted to engineering managers' }, { status: 403 });
     }
 
     const { bindings, ...modelData } = model;

@@ -20,7 +20,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Not authenticated' }, { status: 401 });
     }
 
-    if (!hasPermission(session, 'digital_twin.view') && !isAdmin(session)) {
+    const manager = isAdmin(session) || hasPermission(session, 'digital_twin.manage');
+    if (!manager && !hasPermission(session, 'digital_twin.view')) {
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
     }
 
@@ -41,6 +42,9 @@ export async function GET(request: NextRequest) {
 
     const where: Record<string, unknown> = {
       asset: { is: assetPlantWhere },
+      // Draft manufacturer CAD and 3D site scans must not be discoverable by
+      // ordinary viewers before independent source/plant engineering review.
+      ...(manager ? {} : { isActive: true }),
     };
 
     if (search) {

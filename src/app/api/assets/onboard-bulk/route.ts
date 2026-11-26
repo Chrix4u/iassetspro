@@ -1,3 +1,4 @@
+import { persistOpeningMeterReadings } from '@/services/assets/assetMeter.service';
 import {NextRequest,NextResponse} from 'next/server';
 import {db} from '@/lib/db';
 import {getSession,isAdmin} from '@/lib/auth';
@@ -162,6 +163,14 @@ export async function POST(request:NextRequest){
        name:partMeterName(code,d.name),meterType:d.meterType,unit:d.unit,currentValue:d.initialValue,
        lastReadingAt:d.initialReadingProvided?new Date():null,createdById:session.userId,
       }))});
+    }
+    // These are newly created machines only. Include both machine and part
+    // counters; never synthesize history for old registrations.
+    for(const m of machines){
+      const assetId=assetIds.get(str(m.machineCode))!;
+      const plantId=plantBy.get(str(m.plantCode))!.id;
+      const meters=await tx.assetMeter.findMany({where:{assetId,lastReadingAt:{not:null}}});
+      await persistOpeningMeterReadings(tx,{assetId,plantId,actorId:session.userId,meters});
     }
     for(const v of visuals){
       const {type,code}=owner(v,'Visuals');

@@ -1,4 +1,5 @@
 import type { Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 
 type AssetMeterClient = Pick<Prisma.TransactionClient, 'assetMeter' | 'meterReading'>;
 
@@ -41,14 +42,34 @@ export async function listAssetMeters(client: AssetMeterClient, assetId: string)
   });
 }
 
+/** Persist only explicit opening observations, not default zero values.
+ * Call within the same transaction as creation of these new meter rows.
+ * An opening baseline is not production consumption.
+ */
+export async function persistOpeningMeterReadings(
+  client: Pick<AssetMeterClient, 'meterReading'>,
+  input: { assetId: string; plantId: string; actorId: string; meters: Array<{
+    id: string; name: string; unit: string; currentValue: number; lastReadingAt: Date | null;
+  }> },
+) {
+  const data = input.meters.flatMap(meter => meter.lastReadingAt === null ? [] : [{
+    readingNumber: 'MR-OPEN-' + randomUUID(),
+    assetId: input.assetId, assetMeterId: meter.id, plantId: input.plantId,
+    meterName: meter.name, unit: meter.unit, value: meter.currentValue,
+    readingDate: meter.lastReadingAt, previousValue: null, consumption: 0,
+    notes: 'Opening observed meter baseline at registration', readById: input.actorId,
+  }]);
+  if (data.length) await client.meterReading.createMany({ data });
+}
+
 export async function createAssetMeter(
   client: AssetMeterClient,
-  input: { assetId: string; actorId: string; definition: unknown },
+  input: { assetId: string; actorId: string; plantId: string; definition: unknown },
 ) {
   const normalized = normalizeAssetMeterInput(input.definition);
   if (!normalized.ok) throw new Error(normalized.error);
   const { name, unit, meterType, initialValue, initialReadingProvided } = normalized.value;
-  return client.assetMeter.create({
+  const meter = await client.assetMeter.create({
     data: {
       assetId: input.assetId,
       name,
@@ -59,6 +80,8 @@ export async function createAssetMeter(
       createdById: input.actorId,
     },
   });
+  await persistOpeningMeterReadings(client, { assetId: input.assetId, plantId: input.plantId, actorId: input.actorId, meters: [meter] });
+  return meter;
 }
 
 /**

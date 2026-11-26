@@ -60,14 +60,21 @@ describe('asset meter planning input', () => {
       ok: true, value: { initialValue: 0, initialReadingProvided: true },
     });
   });
-  it('persists a timestamp for an observed zero, not a blank counter', async () => {
-    const create = vi.fn(async (request: { data: { lastReadingAt: Date | null } }) => request.data);
-    const client = { assetMeter: { create } } as unknown as Parameters<typeof createAssetMeter>[0];
-    const assetId = 'asset-1', actorId = 'engineer-1';
-    await createAssetMeter(client, { assetId, actorId, definition: { name: 'Measured Zero', unit: 'hours', initialValue: 0 } });
+  it('persists explicit zero and nonzero opening observations but never invents a blank reading', async () => {
+    const create = vi.fn(async (request: { data: { lastReadingAt: Date | null } }) => ({id:'meter-'+request.data.lastReadingAt, ...request.data}));
+    const createMany = vi.fn().mockResolvedValue({count:1});
+    const client = { assetMeter: { create }, meterReading:{createMany} } as unknown as Parameters<typeof createAssetMeter>[0];
+    const assetId = 'asset-1', actorId = 'engineer-1', plantId='plant-1';
+    await createAssetMeter(client, { assetId, actorId, plantId, definition: { name: 'Measured Zero', unit: 'hours', initialValue: 0 } });
     expect(create.mock.calls[0][0].data.lastReadingAt).toBeInstanceOf(Date);
-    await createAssetMeter(client, { assetId, actorId, definition: { name: 'Unknown Counter', unit: 'hours', initialValue: null } });
+    expect(createMany).toHaveBeenCalledWith({data:[expect.objectContaining({assetId,plantId,assetMeterId:expect.any(String),
+      meterName:'Measured Zero',unit:'hours',value:0,readingDate:create.mock.calls[0][0].data.lastReadingAt,
+      previousValue:null,consumption:0,readById:actorId})]});
+    await createAssetMeter(client, { assetId, actorId, plantId, definition: { name: 'Unknown Counter', unit: 'hours', initialValue: null } });
     expect(create.mock.calls[1][0].data.lastReadingAt).toBeNull();
+    expect(createMany).toHaveBeenCalledTimes(1);
+    await createAssetMeter(client, { assetId, actorId, plantId, definition: { name: 'Used Counter', unit: 'hours', initialValue: 120 } });
+    expect(createMany).toHaveBeenLastCalledWith({data:[expect.objectContaining({value:120,consumption:0,previousValue:null})]});
   });
   it('rejects missing meter identity and non-numeric initial readings', () => {
     expect(normalizeAssetMeterInput({ name: '', unit: 'h' })).toEqual({ ok: false, error: 'Meter name is required' });

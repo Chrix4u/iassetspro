@@ -420,7 +420,7 @@ export function AssetsPage() {
         footer={
           <div className="flex w-full flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Button onClick={handleSave} disabled={saving || locationAssignmentLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               {saving ? <RefreshCw className="mr-1.5 h-4 w-4 animate-spin" /> : null}
               {editId ? 'Save Changes' : 'Create Asset'}
             </Button>
@@ -482,7 +482,7 @@ export function AssetsPage() {
               <div className="min-w-0 space-y-1.5"><Label>Plant</Label>
                 <AsyncSearchableSelect
                   value={form.plantId}
-                  onValueChange={v => setForm(f => ({ ...f, plantId: v, functionalLocationId: '' }))}
+                  onValueChange={v => setForm(f => ({ ...f, plantId: v, departmentId: '', functionalLocationId: '' }))}
                   fetchOptions={async () => {
                     const res = await api.get('/api/plants');
                     if (res.success && res.data) {
@@ -502,8 +502,12 @@ export function AssetsPage() {
                 <AsyncSearchableSelect
                   value={form.departmentId}
                   onValueChange={v => setForm(f => ({ ...f, departmentId: v }))}
+                  disabled={!form.plantId}
+                  deps={[form.plantId]}
+                  key={form.plantId}
                   fetchOptions={async () => {
-                    const res = await api.get('/api/departments');
+                    if (!form.plantId) return [];
+                    const res = await api.get(`/api/departments?plantId=${encodeURIComponent(form.plantId)}`, { headers: { 'x-plant-id': form.plantId } });
                     if (res.success && res.data) {
                       return (Array.isArray(res.data) ? res.data : []).map((d: any) => ({
                         value: d.id,
@@ -527,7 +531,7 @@ export function AssetsPage() {
                 disabled={locationAssignmentLoading}
               />
             )}
-            <p className="text-xs text-muted-foreground">The selected hierarchy code is the authoritative installation address. Legacy Location, Building, Floor and Area fields are intentionally not duplicated here.</p>
+            <p className="text-xs text-muted-foreground">Select an installation point in the primary functional location hierarchy. If none is available, ask the administrator to create an assignable position for this plant. The coded location is used for maintenance and reporting.</p>
             <CommissioningParameterFields items={machineParameters} onChange={setMachineParameters}/>
             {!editId&&canCreateMeters&&<CommissioningMeterFields items={machineMeters} onChange={setMachineMeters}/>}
             <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">

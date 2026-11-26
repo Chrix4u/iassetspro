@@ -668,14 +668,14 @@ export function ReportsMaintenancePage() {
       {!loading && reportData && (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 print:grid-cols-3 print:gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 print:grid-cols-3 print:gap-2">
             {kpiCards.map(k => { const I = k.icon; return (
-              <Card key={k.label} className="border border-border/60 shadow-sm print:shadow-none print:border cursor-pointer hover:shadow-md transition-all" onClick={() => k.tab && setActiveTab(k.tab)}><CardContent className="p-4 print:p-2">
-                <div className="flex items-center gap-3">
-                  <div className={`h-10 w-10 rounded-xl ${k.color} flex items-center justify-center shrink-0 print:hidden`}><I className="h-4.5 w-4.5" /></div>
-                  <div className="min-w-0">
-                    <p className="text-xl font-bold truncate">{k.value}</p>
-                    <p className="text-[11px] text-muted-foreground truncate">{k.label}</p>
+              <Card key={k.label} className="min-w-0 border border-border/60 shadow-sm print:shadow-none print:border cursor-pointer hover:shadow-md transition-all" onClick={() => k.tab && setActiveTab(k.tab)}><CardContent className="p-3 print:p-2">
+                <div className="flex flex-col items-start gap-2 2xl:flex-row 2xl:items-center">
+                  <div className={`h-8 w-8 rounded-lg ${k.color} flex items-center justify-center shrink-0 print:hidden`}><I className="h-4 w-4" /></div>
+                  <div className="min-w-0 w-full">
+                    <p className="text-lg font-bold tabular-nums [overflow-wrap:anywhere]">{k.value}</p>
+                    <p className="text-xs text-muted-foreground break-words">{k.label}</p>
                   </div>
                 </div>
               </CardContent></Card>
@@ -2610,14 +2610,14 @@ export function EquipmentHistoryPage() {
       {data && asset && !loading && !error && (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-4 print:grid-cols-3 print:gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3 print:grid-cols-3 print:gap-2">
             {kpiCards.map(k => { const I = k.icon; return (
-              <Card key={k.label} className="border border-border/60 shadow-sm print:shadow-none print:border cursor-pointer hover:shadow-md transition-all" onClick={() => k.tab && setActiveTab(k.tab)}><CardContent className="p-4 print:p-2">
-                <div className="flex items-center gap-3">
-                  <div className={`h-10 w-10 rounded-xl ${k.color} flex items-center justify-center shrink-0 print:hidden`}><I className="h-4.5 w-4.5" /></div>
-                  <div className="min-w-0">
-                    <p className="text-xl font-bold truncate">{k.value}</p>
-                    <p className="text-[11px] text-muted-foreground truncate">{k.label}</p>
+              <Card key={k.label} className="min-w-0 border border-border/60 shadow-sm print:shadow-none print:border cursor-pointer hover:shadow-md transition-all" onClick={() => k.tab && setActiveTab(k.tab)}><CardContent className="p-3 print:p-2">
+                <div className="flex flex-col items-start gap-2 2xl:flex-row 2xl:items-center">
+                  <div className={`h-8 w-8 rounded-lg ${k.color} flex items-center justify-center shrink-0 print:hidden`}><I className="h-4 w-4" /></div>
+                  <div className="min-w-0 w-full">
+                    <p className="text-lg font-bold tabular-nums [overflow-wrap:anywhere]">{k.value}</p>
+                    <p className="text-xs text-muted-foreground break-words">{k.label}</p>
                   </div>
                 </div>
               </CardContent></Card>

@@ -1,3 +1,5 @@
+import { validateDepartmentParent } from '@/lib/department-hierarchy';
+import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, isAdmin } from '@/lib/auth';
@@ -17,6 +19,8 @@ export async function GET(
     }
 
     const { id } = await params;
+    const scope=await getPlantScope(request,session);
+    if(scope.denyAccess)return NextResponse.json({success:false,error:'Plant access denied'},{status:403});
 
     const department = await db.department.findUnique({
       where: { id },
@@ -41,7 +45,11 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ success: true, data: department });
+    if(!canAccessPlantStrict(scope,department.plantId))
+      return NextResponse.json({success:false,error:'Plant access denied'},{status:403});
+    // Do not expose children from an inconsistent legacy cross-plant tree.
+    return NextResponse.json({ success: true, data: {...department,
+      children:department.children.filter(child=>child.plantId===department.plantId)} });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to load department';
     return NextResponse.json({ success: false, error: message }, { status: 500 });
@@ -85,9 +93,27 @@ export async function PUT(
       );
     }
 
+    if(updateData.plantId!==undefined&&(typeof updateData.plantId!=='string'||!updateData.plantId.trim()))
+      return NextResponse.json({success:false,error:'A valid plant is required'},{status:400});
+    if(updateData.parentId!==undefined&&updateData.parentId!==null&&typeof updateData.parentId!=='string')
+      return NextResponse.json({success:false,error:'Invalid parent department'},{status:400});
     const effectivePlantId = typeof updateData.plantId === 'string'
       ? updateData.plantId
       : existing.plantId;
+    const effectiveParentId=updateData.parentId===undefined?existing.parentId:updateData.parentId as string|null;
+    if(effectivePlantId!==existing.plantId){
+      const [plant,linked]=await Promise.all([
+        db.plant.findUnique({where:{id:effectivePlantId},select:{id:true}}),
+        db.department.findUnique({where:{id},select:{_count:{select:{children:true,assets:true,pmSchedules:true}}}}),
+      ]);
+      if(!plant)return NextResponse.json({success:false,error:'Plant not found'},{status:400});
+      if(!linked||linked._count.children||linked._count.assets||linked._count.pmSchedules)
+        return NextResponse.json({success:false,error:'Department has linked children, machines or PM schedules; a controlled transfer is required'},{status:409});
+    }
+    if(effectiveParentId&&(effectivePlantId!==existing.plantId||effectiveParentId!==existing.parentId)){
+      const error=await validateDepartmentParent(db,{plantId:effectivePlantId,parentId:effectiveParentId,departmentId:id});
+      if(error)return NextResponse.json({success:false,error},{status:400});
+    }
     const effectiveSupervisorId = updateData.supervisorId !== undefined
       ? (typeof updateData.supervisorId === 'string' ? updateData.supervisorId : null)
       : existing.supervisorId;

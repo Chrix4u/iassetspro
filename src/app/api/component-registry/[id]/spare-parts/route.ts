@@ -4,7 +4,8 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 import { createAuditLog } from '@/lib/audit';
 
-async function getSparePartComponent(request:NextRequest,session:NonNullable<ReturnType<typeof getSession>>,id:string) {
+type SparePartAccess = {error:NextResponse} | {component:{id:string;asset:{plantId:string}|null}};
+async function getSparePartComponent(request:NextRequest,session:NonNullable<ReturnType<typeof getSession>>,id:string):Promise<SparePartAccess> {
   const scope=await getPlantScope(request,session);
   if(scope.denyAccess)return {error:NextResponse.json({success:false,error:'Plant access denied'},{status:403})} as const;
   const component=await db.componentRegistry.findUnique({where:{id},select:{id:true,asset:{select:{plantId:true}}}});

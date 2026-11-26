@@ -11,7 +11,10 @@ export async function GET(request: NextRequest) {
     }
 
     const plantScope = await getPlantScope(request, session);
+    if (plantScope.denyAccess) return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
     const pf = getPlantFilterWhere(plantScope);
+    // Alerts, readings and rules inherit plant ownership through their device.
+    const deviceScope = Object.keys(pf).length ? { device: pf } : {};
 
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -28,19 +31,19 @@ export async function GET(request: NextRequest) {
     // Alerts today and recent
     const [alertsToday, activeAlerts, criticalAlerts] = await Promise.all([
       db.iotAlert.count({
-        where: { ...pf, createdAt: { gte: todayStart } },
+        where: { ...deviceScope, createdAt: { gte: todayStart } },
       }),
       db.iotAlert.count({
-        where: { ...pf, status: 'active' },
+        where: { ...deviceScope, status: 'active' },
       }),
       db.iotAlert.count({
-        where: { ...pf, severity: 'critical', status: 'active' },
+        where: { ...deviceScope, severity: 'critical', status: 'active' },
       }),
     ]);
 
     // Recent alerts (last 20)
     const recentAlerts = await db.iotAlert.findMany({
-      where: { ...pf, status: 'active' },
+      where: { ...deviceScope, status: 'active' },
       include: {
         device: { select: { id: true, name: true, deviceCode: true } },
         rule: { select: { id: true, name: true } },
@@ -70,12 +73,12 @@ export async function GET(request: NextRequest) {
 
     // Total readings today
     const readingsToday = await db.iotReading.count({
-      where: { ...pf, timestamp: { gte: todayStart } },
+      where: { ...deviceScope, timestamp: { gte: todayStart } },
     });
 
     // Active rules
     const activeRules = await db.iotAlertRule.count({
-      where: { ...pf, isActive: true },
+      where: { ...deviceScope, isActive: true },
     });
 
     // Get devices with latest readings for live sensor data

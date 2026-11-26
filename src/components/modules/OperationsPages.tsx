@@ -31,7 +31,7 @@ import {
   Plus, Search, MoreHorizontal, Pencil, Trash2, AlertTriangle, CheckCircle2,
   Filter, Users, Calendar, Eye, ListChecks, ShieldAlert, Play, X,
   Activity, BookOpen, ClipboardCheck, ClipboardList, Settings, Send, Target, TrendingUp,
-  Download, BarChart3,
+  Download, BarChart3, Wrench, StopCircle, FileCheck, Crosshair, type LucideIcon,
 } from 'lucide-react';
 import { EmptyState, StatusBadge, PriorityBadge, getInitials, formatDate, formatDateTime, timeAgo, LoadingSkeleton, formatDuration } from '@/components/shared/helpers';
 import { SearchableSelect } from '@/components/ui/searchable-select';
@@ -813,6 +813,8 @@ export function OperationsChecklistsPage() {
   const { hasPermission, isAdmin } = useAuthStore();
   const [checklists, setChecklists] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [selected, setSelected] = useState<any>(null);
@@ -821,21 +823,28 @@ export function OperationsChecklistsPage() {
   const [form, setForm] = useState({ name: '', description: '', category: 'safety', items: '' });
 
   useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
     api.get<any>('/api/checklists').then(res => {
+      if (cancelled) return;
       if (res.success) {
         setChecklists((res.data || []).map((cl: any) => ({
           id: cl.id,
           name: cl.title,
-          description: cl.description,
+          description: cl.description || '',
           category: cl.type,
           itemsCount: (cl.items || []).length,
           lastUsed: cl.updatedAt || cl.createdAt,
           items: (cl.items || []).map((it: any) => it.item),
         })));
+      } else {
+        setLoadError(res.error || 'Unable to load checklists');
       }
-      setLoading(false);
-    });
-  }, []);
+    }).catch(() => { if (!cancelled) setLoadError('Unable to load checklists'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [reload]);
 
   const categories = ['safety', 'maintenance', 'inspection', 'startup', 'shutdown', 'audit', 'calibration'];
 
@@ -849,7 +858,7 @@ export function OperationsChecklistsPage() {
     calibration: 'bg-teal-50 text-teal-700 border-teal-200',
   };
 
-  const catIcons: Record<string, React.ElementType> = {
+  const catIcons: Record<string, LucideIcon> = {
     safety: ShieldAlert,
     maintenance: Wrench,
     inspection: Search,
@@ -862,7 +871,7 @@ export function OperationsChecklistsPage() {
   const filtered = useMemo(() => {
     if (!searchText.trim()) return checklists;
     const q = searchText.toLowerCase();
-    return checklists.filter(c => c.name.toLowerCase().includes(q) || c.category.toLowerCase().includes(q) || c.description.toLowerCase().includes(q));
+    return checklists.filter(c => c.name.toLowerCase().includes(q) || c.category.toLowerCase().includes(q) || (c.description || '').toLowerCase().includes(q));
   }, [checklists, searchText]);
 
   const handleCreate = async () => {
@@ -881,7 +890,7 @@ export function OperationsChecklistsPage() {
       const newChecklist = {
         id: res.data.id,
         name: res.data.title,
-        description: res.data.description,
+        description: res.data.description || '',
         category: res.data.type,
         itemsCount: (res.data.items || []).length,
         lastUsed: res.data.updatedAt || res.data.createdAt,
@@ -897,7 +906,8 @@ export function OperationsChecklistsPage() {
     setSaving(false);
   };
 
-  if (loading) return <div className="p-6 lg:p-8"><LoadingSkeleton /></div>;
+  if (loading) return <div className="page-content"><h1 className="text-2xl font-bold tracking-tight">Checklists</h1><LoadingSkeleton /></div>;
+  if (loadError) return <div className="page-content"><h1 className="text-2xl font-bold tracking-tight">Checklists</h1><div role="alert" className="rounded-lg border p-4 space-y-3"><p>{loadError}</p><Button variant="outline" onClick={() => setReload(n => n + 1)}>Retry</Button></div></div>;
 
   return (
     <div className="page-content">
@@ -906,8 +916,8 @@ export function OperationsChecklistsPage() {
           <h1 className="text-2xl font-bold tracking-tight">Checklists</h1>
           <p className="text-muted-foreground text-sm mt-1">{checklists.length} checklist template(s)</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="relative min-w-[200px] max-w-xs">
+        <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+          <div className="relative min-w-0 flex-1 sm:min-w-[200px] max-w-xs">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Search checklists..." value={searchText} onChange={e => setSearchText(e.target.value)} className="pl-9" />
           </div>

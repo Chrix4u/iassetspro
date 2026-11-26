@@ -160,7 +160,9 @@ export function OfflineStorageBootstrap() {
     };
 
     window.addEventListener(OFFLINE_CACHE_STATE_EVENT, handleCacheState);
+    document.documentElement.dataset.offlineCacheListenerReady = 'true';
     return () => {
+      delete document.documentElement.dataset.offlineCacheListenerReady;
       disposed = true;
       window.clearInterval(buildVersionTimer);
       window.clearInterval(serviceWorkerUpdateTimer);

@@ -736,7 +736,7 @@ export const reliabilityEngineeringService = {
       where: { componentId },
       orderBy: { recordedAt: 'desc' },
       take: 20,
-      select: { recordedAt: true, conditionValue: true, metricName: true },
+      select: { recordedAt: true, value: true, parameterKey: true, unit: true, minThreshold: true, maxThreshold: true },
     });
 
     let degradationRate = 0;
@@ -770,29 +770,36 @@ export const reliabilityEngineeringService = {
       }
     }
 
-    // Method 3: Estimate from condition readings trend
-    if (conditionReadings.length >= 3) {
-      const recent = conditionReadings.slice(0, Math.min(10, conditionReadings.length));
-      // Calculate trend in condition value
-      let trendSum = 0;
-      let trendCount = 0;
-      for (let i = 1; i < recent.length; i++) {
-        const daysDiff = (recent[i - 1].recordedAt.getTime() - recent[i].recordedAt.getTime()) / (1000 * 60 * 60 * 24);
-        if (daysDiff > 0) {
-          const valueDiff = recent[i].conditionValue - recent[i - 1].conditionValue;
-          trendSum += valueDiff / daysDiff;
-          trendCount += 1;
-        }
-      }
-      if (trendCount > 0) {
-        const avgTrend = trendSum / trendCount;
-        // Degrading condition increases over time (positive trend = degrading)
-        if (avgTrend > 0) {
-          const conditionDegradation = avgTrend * 0.5; // Scale factor
-          degradationRate = Math.max(degradationRate, conditionDegradation);
-          confidenceScore = Math.min(0.95, confidenceScore + 0.4);
-        }
-      }
+    // Method 3: Compare like-for-like measurements only. Raw temperature,
+    // vibration and pressure cannot be averaged into a health-point trend.
+    // Use excursions normalized against a recorded two-sided operating band.
+    const groups = new Map<string, typeof conditionReadings>();
+    for (const reading of conditionReadings) {
+      const { minThreshold: min, maxThreshold: max } = reading;
+      if (min == null || max == null || !Number.isFinite(min) || !Number.isFinite(max) || max <= min || !Number.isFinite(reading.value)) continue;
+      const key = JSON.stringify([reading.parameterKey, reading.unit, min, max]);
+      const group = groups.get(key) ?? [];
+      group.push(reading);
+      groups.set(key, group);
+    }
+    let observedTrend = 0;
+    for (const group of groups.values()) {
+      if (group.length < 3) continue;
+      const recent = group.slice(0, 10);
+      const excursion = (reading: typeof recent[number]) => {
+        const min = reading.minThreshold!;
+        const max = reading.maxThreshold!;
+        return Math.max(0, min - reading.value, reading.value - max) / (max - min);
+      };
+      const newest = recent[0];
+      const oldest = recent[recent.length - 1];
+      const days = (newest.recordedAt.getTime() - oldest.recordedAt.getTime()) / 86400000;
+      if (days <= 0) continue;
+      observedTrend = Math.max(observedTrend, (excursion(newest) - excursion(oldest)) * 100 / days);
+    }
+    if (observedTrend > 0) {
+      degradationRate = Math.max(degradationRate, observedTrend * 0.5);
+      confidenceScore = Math.min(0.7, confidenceScore + 0.15);
     }
 
     // Default degradation rate if no data

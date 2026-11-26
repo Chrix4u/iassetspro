@@ -1,3 +1,4 @@
+import { persistOpeningMeterReadings } from '@/services/assets/assetMeter.service';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
@@ -319,6 +320,11 @@ export async function POST(request: NextRequest) {
         createdBy: { select: { id: true, fullName: true, username: true } },
       },
     });
+
+    if(commissioningMeters.some(m=>m.initialReadingProvided)){
+      const meters=await tx.assetMeter.findMany({where:{assetId:created.id}});
+      await persistOpeningMeterReadings(tx,{assetId:created.id,plantId,actorId:session.userId,meters});
+    }
 
     // Audit the machine identity, commissioned standards and meters in the same transaction.
     await tx.auditLog.create({

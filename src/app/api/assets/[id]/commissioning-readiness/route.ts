@@ -37,7 +37,9 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
     const today=new Date().toISOString().slice(0,10);
     const first=new Date(today+'T00:00:00.000Z');
     const future=new Date(first.getTime()+31*86400000);
-    const window={assetId:id,productionDate:{gte:first,lt:future}};
+    const window={assetId:id,plantId:asset.plantId,productionDate:{gte:first,lt:future}};
+    // Roster eligibility can change after the planner originally saved a shift.
+    const eligibleCrewUser={status:'active',plantAccess:{some:{plantId:asset.plantId}}};
     const [
       locationAssignments,registeredComponents,uncommissionedComponents,
       meters,photos,models,pm,scheduledShifts,shiftsWithLeader,approvedProductionShifts,
@@ -61,7 +63,14 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
       db.pmScheduleTask.findMany({where:{assetId:id,isActive:true},
         select:{basis:true,pmType:true,pmTaskId:true},take:1000}),
       db.productionShiftPlan.count({where:window}),
-      db.productionShiftPlan.count({where:{...window,crew:{some:{isLeader:true}}}}),
+      db.productionShiftPlan.count({where:{
+        ...window,
+        shift:{isActive:true,plantId:asset.plantId},
+        crew:{
+          some:{isLeader:true,user:eligibleCrewUser},
+          none:{user:{NOT:eligibleCrewUser}},
+        },
+      }}),
       db.productionShiftRecord.count({where:{assetId:id,status:'approved'}}),
     ]);
     let specification:Record<string,unknown>={};

@@ -36,6 +36,8 @@ describe('witnessed machine commissioning preflight semantics',()=>{
     expect(state(configured,'parameters').state).toBe('configured');
     expect(state(configured,'shifts').state).toBe('configured');
     expect(state({...configured,scheduledShifts:4},'shifts').state).toBe('review');
+    expect(state({...configured,shiftsWithLeader:0},'shifts').state).toBe('review');
+    expect(state({...configured,shiftsWithLeader:0},'shifts').detail).toContain('eligible leader, active crew and active shift template');
     expect(state({...configured,locationAssignments:0},'location').state).toBe('missing');
   });
   it('never treats a proposed AI make/model or uncommissioned parts as engineer approved',()=>{

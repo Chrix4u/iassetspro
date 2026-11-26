@@ -76,7 +76,7 @@ export function evaluateMachineCommissioningReadiness(e:MachineReadinessEvidence
     check('shifts','Planner shifts and assigned leaders',
       !e.scheduledShifts?'missing':e.shiftsWithLeader===e.scheduledShifts?'configured':'review',
       !e.scheduledShifts?'Planner must set shifts, production targets and crews':
-      `${e.shiftsWithLeader} of ${e.scheduledShifts} upcoming shifts have assigned leaders`),
+      `${e.shiftsWithLeader} of ${e.scheduledShifts} upcoming shifts have an eligible leader, active crew and active shift template`),
     check('production','Independently approved production entries',
       e.approvedProductionShifts?'configured':'missing',
       e.approvedProductionShifts?

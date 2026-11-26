@@ -150,5 +150,14 @@ describe('plant-scoped live machine commissioning readiness API',()=>{
       select:{basis:true,pmType:true,pmTaskId:true},
     }));
     expect(mocks.plans).toHaveBeenCalledTimes(2);
+    const eligibleUser={status:'active',plantAccess:{some:{plantId:'plant-a'}}};
+    expect(mocks.plans).toHaveBeenNthCalledWith(1,{where:{
+      assetId:machine,plantId:'plant-a',productionDate:{gte:expect.any(Date),lt:expect.any(Date)},
+    }});
+    expect(mocks.plans).toHaveBeenNthCalledWith(2,{where:{
+      assetId:machine,plantId:'plant-a',productionDate:{gte:expect.any(Date),lt:expect.any(Date)},
+      shift:{isActive:true,plantId:'plant-a'},
+      crew:{some:{isLeader:true,user:eligibleUser},none:{user:{NOT:eligibleUser}}},
+    }});
   });
 });

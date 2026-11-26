@@ -108,3 +108,55 @@ test('isolated UAT: machine creation form opens wider and aligns fields on deskt
     await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible();
   }
 });
+
+
+test('machine form uses the chosen plant for locations and departments and recovers from location fetch failure', async ({page,context,request})=>{
+  test.skip(process.env.CI!=='true'||!process.env.DATABASE_URL?.includes('/platform_e2e?schema=public')||
+    process.env.PLAYWRIGHT_BASE_URL!=='http://127.0.0.1:3000','Isolated platform fixture only');
+  test.setTimeout(90_000);
+  const login=await request.post('/api/auth/login',{data:{username:'admin',password:'admin123'}});
+  expect(login.status()).toBe(200);
+  const token=(await login.json()).data.token as string;
+  const list=await request.get('/api/plants',{headers:{Authorization:'Bearer '+token}});
+  expect(list.status()).toBe(200);
+  const plants=(await list.json()).data as Array<{id:string;name:string}>;
+  expect(plants.length).toBeGreaterThanOrEqual(2);
+  const [original,selected]=plants;
+  await context.addInitScript(({token,plantId})=>{
+    localStorage.setItem('eam_token',token);
+    localStorage.setItem('user_plant_id',plantId);
+  },{token,plantId:original.id});
+  const calls:Array<{plant:string|null;header:string}>=[];
+  let failNext=true;
+  // Simulate a recoverable transport failure, then use the actual scoped API.
+  await page.route('**/api/functional-locations?**',async route=>{
+    const url=new URL(route.request().url());
+    if(url.searchParams.get('plantId')!==selected.id)return route.continue();
+    calls.push({plant:url.searchParams.get('plantId'),header:route.request().headers()['x-plant-id']||''});
+    if(failNext){
+      failNext=false;
+      return route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({success:false,error:'Synthetic temporary outage'})});
+    }
+    return route.continue();
+  });
+  await page.goto('/#/assets-machines');
+  await expect(page.getByRole('heading',{name:'Asset Register',exact:true})).toBeVisible({timeout:30_000});
+  await page.getByRole('button',{name:'Add Asset',exact:true}).click();
+  const form=page.getByTestId('asset-create-form');
+  const plant=form.getByRole('combobox',{name:'Select plant',exact:true});
+  await expect(plant).toBeEnabled({timeout:10_000});
+  await plant.click();
+  await page.getByPlaceholder('Search plants...').fill(selected.name);
+  const departmentRequest=page.waitForRequest(req=>new URL(req.url()).pathname==='/api/departments'&&new URL(req.url()).searchParams.get('plantId')===selected.id);
+  await page.getByRole('option').filter({hasText:selected.name}).first().click();
+  expect((await departmentRequest).headers()['x-plant-id']).toBe(selected.id);
+  await expect(form.getByText('Could not load locations for the selected plant.',{exact:true})).toBeVisible({timeout:15_000});
+  await expect(form.getByRole('combobox',{name:'Functional Location / Installed At'})).toBeDisabled();
+  const retry=page.waitForResponse(response=>new URL(response.url()).pathname==='/api/functional-locations'&&new URL(response.url()).searchParams.get('plantId')===selected.id);
+  await form.getByRole('button',{name:'Retry',exact:true}).click();
+  expect((await retry).status()).toBe(200);
+  await expect(form.getByText('Could not load locations for the selected plant.',{exact:true})).toHaveCount(0);
+  expect(calls.length).toBeGreaterThanOrEqual(2);
+  expect(calls.every(call=>call.plant===selected.id&&call.header===selected.id)).toBe(true);
+  // This is a form-only check; no synthetic machine is submitted.
+});

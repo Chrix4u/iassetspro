@@ -243,7 +243,7 @@ export function MaintenanceRequestsPage() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const { hasPermission, user, isAdmin } = useAuthStore();
-  const { pageParams } = useNavigationStore();
+  const { pageParams, currentPage, navigate } = useNavigationStore();
 
   // Track autoOpen to avoid race condition between filter effect and fetch effect
   const autoOpenRef = useRef<string | null>(null);
@@ -260,10 +260,10 @@ export function MaintenanceRequestsPage() {
     if (pageParams?.autoOpen === 'first') {
       autoOpenRef.current = 'first';
     }
-    if (pageParams?.create === 'true') {
+    if (currentPage === 'create-mr' || pageParams?.create === 'true') {
       setCreateOpen(true);
     }
-  }, []);
+  }, [currentPage, pageParams]);
 
 
   const filteredRequests = useMemo(() => {
@@ -388,11 +388,11 @@ export function MaintenanceRequestsPage() {
         {hasPermission('maintenance_requests.create') && (
           <>
           <Button className="bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm" onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4 mr-1.5" />New Request</Button>
-          <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen} title="Create Maintenance Request" footer={<Button type="submit" form="create-mr-form" className="bg-emerald-600 hover:bg-emerald-700 text-white">Submit Request</Button>}>
+          <ResponsiveDialog open={createOpen} onOpenChange={open => { setCreateOpen(open); if (!open && currentPage === 'create-mr') navigate('maintenance-requests', {}, true); }} title="Create Maintenance Request" footer={<Button type="submit" form="create-mr-form" className="bg-emerald-600 hover:bg-emerald-700 text-white">Submit Request</Button>}>
             <CreateMRForm
               initialAssetId={pageParams?.assetId}
               initialComponentName={pageParams?.componentName}
-              onSuccess={() => { setCreateOpen(false); handleRefresh(); }}
+              onSuccess={() => { setCreateOpen(false); if (currentPage === 'create-mr') navigate('maintenance-requests', {}, true); handleRefresh(); }}
 
             />
           </ResponsiveDialog>

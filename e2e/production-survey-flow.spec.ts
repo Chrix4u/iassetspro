@@ -178,3 +178,131 @@ test('isolated UAT: planner standards, operator entry, independent approval and 
     &&r.goodOutput>=1125&&r.defects>=75&&r.plannedShifts>=2
     &&r.unapprovedOrMissingShifts>=1&&r.targetAchievementPct<=40)).toBe(true);
 });
+
+
+test('isolated demonstration: fresh machine, approved 5500 yards and 5000-yard PM threshold',async ({request})=>{
+  if(process.env.CI!=='true'||!process.env.DATABASE_URL?.includes('/platform_e2e?schema=public')||
+    process.env.PLAYWRIGHT_BASE_URL!=='http://127.0.0.1:3000'){
+    if(process.env.CI)throw new Error('Demonstration must use isolated platform CI');
+    test.skip(true,'Only isolated platform CI may create demonstration fixtures');
+  }
+  test.setTimeout(120_000);
+  const [admin,manager,operator]=await Promise.all([actor(request,'admin'),actor(request,'manager'),actor(request,'operator')]);
+  const seedAssets=await request.get('/api/assets?limit=50',{headers:operator});
+  expect(seedAssets.status()).toBe(200);
+  const plantId=(await seedAssets.json()).data.find((a:{plantId?:string})=>a.plantId)?.plantId as string;
+  expect(plantId).toBeTruthy();
+  const categoryResponse=await request.get('/api/asset-categories',{headers:admin});
+  expect(categoryResponse.status()).toBe(200);
+  const categoryId=(await categoryResponse.json()).data[0]?.id as string;
+  expect(categoryId).toBeTruthy();
+  const suffix=Date.now().toString();
+  // Separate synthetic hierarchy: never replace the existing primary system.
+  const hierarchy=await request.post('/api/hierarchy-systems',{headers:admin,data:{
+    name:'Demo acceptance '+suffix,code:'GTPA'+suffix,purpose:'functional_location',codeMode:'generated',
+    isPrimary:false,levels:[{order:1,label:'Installation point',allowAssetAssignment:true}],
+  }});
+  expect(hierarchy.status(),await hierarchy.text()).toBe(201);
+  const system=(await hierarchy.json()).data;
+  const location=await request.post('/api/functional-locations',{headers:admin,data:{
+    hierarchySystemId:system.id,hierarchyLevelId:system.levels[0].id,plantId,
+    name:'Demo installation '+suffix,codeSegment:'GTPA'+suffix,
+  }});
+  expect(location.status(),await location.text()).toBe(201);
+  const functionalLocationId=(await location.json()).data.id;
+  const outputName='Demo Cumulative Fabric Output '+suffix,runtimeName='Demo Running Hours '+suffix;
+  const created=await request.post('/api/assets',{headers:admin,data:{
+    name:'Synthetic demo stenter '+suffix,assetTag:'DEMO-ST-'+suffix,categoryId,plantId,functionalLocationId,
+    acquisitionCondition:'new',status:'operational',criticality:'high',
+    machineParameters:[{name:'Chamber temperature',inspectionType:'measurement',unit:'C',min:150,max:180,reference:'Synthetic test fixture only'}],
+    meters:[{name:outputName,meterType:'production',unit:'yards',initialValue:0},
+      {name:runtimeName,meterType:'runtime',unit:'hours',initialValue:0}],
+  }});
+  expect(created.status(),await created.text()).toBe(201);
+  const assetId=(await created.json()).data.id as string;
+  const locations=await request.get('/api/assets/'+assetId+'/functional-locations',{headers:admin});
+  expect(locations.status()).toBe(200);
+  expect((await locations.json()).data.current.some((a:{functionalLocationId:string})=>a.functionalLocationId===functionalLocationId)).toBe(true);
+  const meterUrl='/api/assets/'+assetId+'/meters';
+  const getMeters=async()=>{
+    const result=await request.get(meterUrl,{headers:admin});
+    expect(result.status()).toBe(200);
+    return (await result.json()).data as Array<{id:string;name:string;currentValue:number}>;
+  };
+  const initial=await getMeters();
+  const output=initial.find(m=>m.name===outputName),runtime=initial.find(m=>m.name===runtimeName);
+  expect(output?.currentValue).toBe(0);
+  expect(runtime?.currentValue).toBe(0);
+  const part=await request.post('/api/component-registry',{headers:admin,data:{
+    assetId,name:'Synthetic drive-end bearing',componentCode:'DEMO-BRG-'+suffix,componentType:'part',
+    inspectionParameters:[{name:'Vibration',inspectionType:'measurement',unit:'mm/s',min:0,max:4.5,reference:'Synthetic test fixture only'}],
+  }});
+  expect(part.status(),await part.text()).toBe(201);
+  const componentId=(await part.json()).data.id;
+  const crewResponse=await request.get('/api/production-surveys/crew?plantId='+plantId,{headers:manager});
+  expect(crewResponse.status()).toBe(200);
+  const operatorId=(await crewResponse.json()).data.find((u:{username:string})=>u.username==='operator1')?.id;
+  expect(operatorId).toBeTruthy();
+  const productCode='DEMO-'+suffix;
+  const product=await request.post('/api/production-surveys/products',{headers:manager,data:{
+    assetId,code:productCode,name:'Synthetic fabric',unit:'yards',
+  }});
+  expect(product.status()).toBe(200);
+  const shift=await request.post('/api/production-surveys/setup',{headers:manager,data:{
+    plantId,name:'Demo Morning '+suffix,code:'demo_'+suffix,startsAt:'06:00',endsAt:'14:00',
+  }});
+  expect(shift.status(),await shift.text()).toBe(201);
+  const shiftTemplateId=(await shift.json()).data.id;
+  const productionDate=new Date(Date.now()-86400000).toISOString().slice(0,10);
+  const plan={assetId,shiftTemplateId,productionDate,plannedShiftsPerDay:1,shiftHours:8,
+    availableMinutes:480,plannedBreakMinutes:30,startsAt:'06:00',endsAt:'14:00',
+    targetQuantity:6000,unit:'yards',productCode,crewUserIds:[operatorId],leaderUserId:operatorId,
+    standardUtilizationPct:85,standardSpeed:15};
+  const published=await request.post('/api/production-surveys/plans',{headers:manager,data:plan});
+  expect(published.status(),await published.text()).toBe(200);
+  const schedule=await request.post('/api/pm-schedules',{headers:admin,data:{
+    title:'Demo bearing maintenance '+suffix,assetId,componentId,frequencyType:'meter',frequencyValue:5000,
+    frequencyUnit:'yards',meterName:outputName,estimatedDuration:25,autoGenerateWO:false,leadDays:0,
+  }});
+  expect(schedule.status(),await schedule.text()).toBe(201);
+  const getThreshold=async()=>{
+    const result=await request.get('/api/production-surveys/pm-progress?assetId='+assetId,{headers:manager});
+    expect(result.status(),await result.text()).toBe(200);
+    return (await result.json()).data.thresholds.find((t:{meterName:string})=>t.meterName===outputName);
+  };
+  expect(await getThreshold()).toMatchObject({state:'upcoming',currentValue:0,nextDueReading:5000});
+  const entry=await request.post('/api/production-surveys',{headers:operator,data:{
+    ...plan,assetMeterId:output!.id,runtimeMeterId:runtime!.id,runtimeCounterHours:6.5,
+    runtimeEvidence:'Synthetic hour-counter evidence',outputQuantity:5500,defectiveQuantity:100,startDelayMinutes:5,
+    breakMinutes:30,repairMinutes:20,inputDeliveryMinutes:10,changeoverMinutes:15,startupCleaningMinutes:10,
+    otherMinutes:5,preventiveMinutes:0,
+  }});
+  expect(entry.status(),await entry.text()).toBe(201);
+  const record=(await entry.json()).data;
+  expect((await getMeters()).find(m=>m.id===output!.id)?.currentValue).toBe(0);
+  expect(await getThreshold()).toMatchObject({state:'upcoming',currentValue:0,nextDueReading:5000});
+  const review='/api/production-surveys/'+record.id+'/review';
+  expect((await request.post(review,{headers:operator,data:{action:'approve'}})).status()).toBe(403);
+  const approval=await request.post(review,{headers:manager,data:{action:'approve'}});
+  expect(approval.status(),await approval.text()).toBe(200);
+  expect((await approval.json()).data).toMatchObject({meterPosted:true,runtimeMeterPosted:true});
+  const replay=await request.post(review,{headers:manager,data:{action:'approve'}});
+  expect(replay.status()).toBe(200);
+  expect((await replay.json()).data.duplicate).toBe(true);
+  const meters=await getMeters();
+  expect(meters.find(m=>m.id===output!.id)?.currentValue).toBe(5500);
+  expect(meters.find(m=>m.id===runtime!.id)?.currentValue).toBe(6.5);
+  expect(await getThreshold()).toMatchObject({state:'due',currentValue:5500,nextDueReading:5000,remaining:0});
+  for(const group of ['day','week','month','quarter','year']){
+    const report=await request.get('/api/production-surveys/report?assetId='+assetId+'&group='+group+
+      '&from='+productionDate+'&to='+productionDate,{headers:manager});
+    expect(report.status(),await report.text()).toBe(200);
+    const rows=(await report.json()).data;
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({output:5500,goodOutput:5400,defects:100,target:6000,
+      productiveMinutes:390,downtimeMinutes:90,availableMinutes:480,utilizationPct:81.25,
+      workbookCumulativeProduction:5500,meterLinkedOutput:5500,plannedShifts:1,unapprovedOrMissingShifts:0});
+    expect(rows[0].targetAchievementPct).toBeCloseTo(91.6667,3);
+    expect(rows[0].engineeringEfficiencyPct).toBeCloseTo(95.8333,3);
+  }
+});

@@ -4,6 +4,7 @@ import { getSession, hasPermission, isAdmin } from '@/lib/auth';
 import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { readMachineParameters } from '@/lib/asset-onboarding';
 import { machinePhotoViewpoint } from '@/lib/machine-photo-views';
+import { allowedProductionMeter, allowedRuntimeMeter } from '@/lib/production-shift-survey';
 import { evaluateMachineCommissioningReadiness } from '@/lib/assets/machine-commissioning-readiness';
 
 export const dynamic = 'force-dynamic';
@@ -72,6 +73,8 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
     const aiDraft=Boolean(draft&&typeof draft==='object'&&
       (draft as {verified?:unknown}).verified!==true);
 
+    const productionMeters=meters.filter(m=>allowedProductionMeter(m.meterType));
+    const runtimeMeters=meters.filter(m=>allowedRuntimeMeter(m.meterType,m.unit));
     const result=evaluateMachineCommissioningReadiness({
       nameplate:{
         manufacturer:asset.manufacturer,model:asset.model,serial:asset.serialNumber,aiDraft,
@@ -81,10 +84,10 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
       inspectionParameters:readMachineParameters(asset.specification).length,
       meterCount:meters.length,
       meterReadingsObserved:meters.filter(m=>m.lastReadingAt!==null).length,
-      productionMeters:meters.filter(m=>['production','production_output','output']
-        .includes(m.meterType.toLowerCase())).length,
-      runtimeMeters:meters.filter(m=>m.meterType.toLowerCase()==='runtime'&&
-        ['h','hr','hrs','hour','hours'].includes(m.unit.toLowerCase())).length,
+      productionMeters:productionMeters.length,
+      runtimeMeters:runtimeMeters.length,
+      productionMetersObserved:productionMeters.filter(m=>m.lastReadingAt!==null).length,
+      runtimeMetersObserved:runtimeMeters.filter(m=>m.lastReadingAt!==null).length,
       actualPhotoViews:photos.filter(photo=>
         photo.sourceProvider==='uploaded' &&
         /^\/private-component-photos\/factory-photo-[0-9a-f-]{36}\.(?:png|jpg|webp)$/i.test(photo.imageUrl),

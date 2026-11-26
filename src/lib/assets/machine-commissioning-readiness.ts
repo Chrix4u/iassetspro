@@ -11,6 +11,8 @@ export interface MachineReadinessEvidence {
   meterReadingsObserved:number;
   productionMeters:number;
   runtimeMeters:number;
+  productionMetersObserved:number;
+  runtimeMetersObserved:number;
   actualPhotoViews:string[];
   privateCadApproved:number;
   privateCadPending:number;
@@ -52,9 +54,11 @@ export function evaluateMachineCommissioningReadiness(e:MachineReadinessEvidence
       !e.inspectionParameters?'Set inspection parameters with limits, units and source references':
       `${e.inspectionParameters} defined; verify all manufacturer limits and units`),
     check('meters','Production and runtime meters',
-      !e.meterCount?'missing':!e.meterReadingsObserved?'review':'configured',
+      !e.meterCount?'missing':
+      !e.productionMeters || !e.runtimeMeters || !e.productionMetersObserved ||
+        !e.runtimeMetersObserved || !e.meterReadingsObserved?'review':'configured',
       !e.meterCount?'Register genuine production/usage and running-hour counters':
-      `${e.meterCount} meters (${e.productionMeters} output, ${e.runtimeMeters} runtime), ${e.meterReadingsObserved} with observed readings`),
+      `${e.productionMetersObserved}/${e.productionMeters} output meters and ${e.runtimeMetersObserved}/${e.runtimeMeters} runtime meters have observed readings. ${!e.productionMeters || !e.runtimeMeters ? 'Register both counter types for production commissioning.' : !e.productionMetersObserved || !e.runtimeMetersObserved ? 'Record an observed reading for each counter type.' : 'Verify counter evidence and units.'}`),
     check('photos','Six genuine machine elevations',
       !missingViews.length?'configured':'missing',
       !missingViews.length?'Six uploaded views; ensure photos match this installed machine':

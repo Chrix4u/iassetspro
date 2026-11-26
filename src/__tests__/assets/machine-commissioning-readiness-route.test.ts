@@ -114,6 +114,20 @@ describe('plant-scoped live machine commissioning readiness API',()=>{
     expect(body.data.physicalAcceptanceComplete).toBe(false);
     expect(response.headers.get('cache-control')).toContain('no-store');
   });
+  it('does not count unrelated observed meters as production or hour-counter evidence',async()=>{
+    mocks.meters.mockResolvedValue([
+      {meterType:'production',unit:'tonne',lastReadingAt:null},
+      {meterType:'runtime',unit:'hours',lastReadingAt:null},
+      {meterType:'temperature',unit:'C',lastReadingAt:new Date()},
+      {meterType:'runtime',unit:'minutes',lastReadingAt:new Date()},
+    ]);
+    const response=await GET(request(),params);
+    expect(response.status).toBe(200);
+    const body=await response.json();
+    const row=body.data.checks.find((c:{key:string})=>c.key==='meters');
+    expect(row.state).toBe('review');
+    expect(row.detail).toContain('0/1 output meters and 0/1 runtime meters');
+  });
   it('queries the selected machine only and the real roster and photo tables',async()=>{
     await GET(request(),params);
     expect(mocks.location).toHaveBeenCalledWith({where:{

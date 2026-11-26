@@ -4,7 +4,7 @@ import {evaluateMachineCommissioningReadiness,type MachineReadinessEvidence} fro
 const empty:MachineReadinessEvidence={
   nameplate:{manufacturer:null,model:null,serial:null,aiDraft:false},
   locationAssignments:0,registeredComponents:0,uncommissionedComponents:0,
-  inspectionParameters:0,meterCount:0,meterReadingsObserved:0,productionMeters:0,runtimeMeters:0,
+  inspectionParameters:0,meterCount:0,meterReadingsObserved:0,productionMeters:0,runtimeMeters:0,productionMetersObserved:0,runtimeMetersObserved:0,
   actualPhotoViews:[],privateCadApproved:0,privateCadPending:0,
   oemSourceAuthenticityCertified:false,calendarPm:0,meterPm:0,
   scheduledShifts:0,shiftsWithLeader:0,approvedProductionShifts:0,
@@ -15,7 +15,7 @@ const configured:MachineReadinessEvidence={
   ...empty,
   nameplate:{manufacturer:'OEM',model:'MX-200',serial:'REAL-123',aiDraft:false},
   locationAssignments:1,registeredComponents:13,uncommissionedComponents:0,
-  inspectionParameters:7,meterCount:2,meterReadingsObserved:2,productionMeters:1,runtimeMeters:1,
+  inspectionParameters:7,meterCount:2,meterReadingsObserved:2,productionMeters:1,runtimeMeters:1,productionMetersObserved:1,runtimeMetersObserved:1,
   actualPhotoViews:['front','back','left','right','top','bottom'],
   privateCadApproved:1,oemSourceAuthenticityCertified:true,
   calendarPm:2,meterPm:1,scheduledShifts:3,shiftsWithLeader:3,
@@ -53,6 +53,13 @@ describe('witnessed machine commissioning preflight semantics',()=>{
     expect(state(unauthentic,'cad').state).toBe('review');
     expect(state(unauthentic,'cad').detail).toContain('unverified');
     expect(state({...configured,privateCadApproved:0,privateCadPending:4},'cad').state).toBe('missing');
+  });
+  it('requires actual observed output and runtime counters, not an unrelated meter reading',()=>{
+    expect(state({...configured,productionMeters:0,productionMetersObserved:0},'meters').state).toBe('review');
+    expect(state({...configured,runtimeMeters:0,runtimeMetersObserved:0},'meters').state).toBe('review');
+    expect(state({...configured,productionMetersObserved:0},'meters').state).toBe('review');
+    expect(state({...configured,runtimeMetersObserved:0},'meters').state).toBe('review');
+    expect(state(configured,'meters').state).toBe('configured');
   });
   it('requires all six distinct real elevations, not six copies of one angle',()=>{
     expect(state({...configured,actualPhotoViews:['front','front','front','front','front','front']},'photos').state)

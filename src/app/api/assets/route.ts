@@ -1,3 +1,4 @@
+import { validateAssetRelationships } from '@/lib/assets/asset-relationship-integrity';
 import { persistOpeningMeterReadings } from '@/services/assets/assetMeter.service';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
@@ -230,6 +231,9 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ success: false, error: 'Parent asset not found or access denied' }, { status: 403 });
       }
     }
+
+    const relationshipError=await validateAssetRelationships(db,{plantId,departmentId,parentId});
+    if(relationshipError)return NextResponse.json({success:false,error:relationshipError},{status:400});
 
     const assetTag = String(requestedAssetTag || '').trim() || await generateAssetTag();
     const existingAssetTag = await db.asset.findUnique({ where: { assetTag }, select: { id: true } });

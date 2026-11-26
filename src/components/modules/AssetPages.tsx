@@ -482,7 +482,8 @@ export function AssetsPage() {
               <div className="min-w-0 space-y-1.5"><Label>Plant</Label>
                 <AsyncSearchableSelect
                   value={form.plantId}
-                  onValueChange={v => setForm(f => ({ ...f, plantId: v, departmentId: '', functionalLocationId: '' }))}
+                  onValueChange={v => setForm(f => ({ ...f, plantId: v, departmentId: '', functionalLocationId: '', parentId: '' }))}
+                  disabled={!!editId}
                   fetchOptions={async () => {
                     const res = await api.get('/api/plants');
                     if (res.success && res.data) {
@@ -557,10 +558,14 @@ export function AssetsPage() {
                 <AsyncSearchableSelect
                   value={form.parentId}
                   onValueChange={v => setForm(f => ({ ...f, parentId: v }))}
+                  disabled={!form.plantId}
+                  deps={[form.plantId, editId]}
+                  key={'parent-'+form.plantId}
                   fetchOptions={async () => {
-                    const res = await api.get('/api/assets?limit=999');
+                    if(!form.plantId)return [];
+                    const res = await api.get('/api/assets?limit=999&plantId='+encodeURIComponent(form.plantId), {headers:{'x-plant-id':form.plantId}});
                     if (res.success && res.data) {
-                      return (Array.isArray(res.data) ? res.data : []).map((a: any) => ({
+                      return (Array.isArray(res.data) ? res.data : []).filter((a:any)=>a.id!==editId&&a.plantId===form.plantId).map((a: any) => ({
                         value: a.id,
                         label: `${a.name} [${a.assetTag || ''}]`,
                       }));

@@ -6,7 +6,7 @@ const mocks=vi.hoisted(()=>({
   getPlantScope:vi.fn(),canAccessPlantStrict:vi.fn(),
   asset:vi.fn(),location:vi.fn(),component:vi.fn(),
   meters:vi.fn(),photos:vi.fn(),models:vi.fn(),pm:vi.fn(),
-  plans:vi.fn(),records:vi.fn(),
+  plans:vi.fn(),records:vi.fn(),componentPoints:vi.fn(),
 }));
 
 vi.mock('@/lib/auth',()=>({
@@ -25,6 +25,7 @@ vi.mock('@/lib/db',()=>({db:{
   pmScheduleTask:{findMany:mocks.pm},
   productionShiftPlan:{count:mocks.plans},
   productionShiftRecord:{count:mocks.records},
+  componentInspectionPoint:{findMany:mocks.componentPoints},
 }}));
 
 import {GET} from '@/app/api/assets/[id]/commissioning-readiness/route';
@@ -70,6 +71,7 @@ beforeEach(()=>{
     {basis:'meter',pmType:'ubm',pmTaskId:'task-2'}]);
   mocks.plans.mockResolvedValueOnce(2).mockResolvedValueOnce(1);
   mocks.records.mockResolvedValue(0);
+  mocks.componentPoints.mockResolvedValue([{inspectionType:'visual',description:'OEM manual',normalRange:null}]);
 });
 
 describe('plant-scoped live machine commissioning readiness API',()=>{
@@ -130,6 +132,20 @@ describe('plant-scoped live machine commissioning readiness API',()=>{
     const row=body.data.checks.find((c:{key:string})=>c.key==='parameters');
     expect(row.state).toBe('review');
     expect(row.detail).toContain('2 of 4 parameters');
+  });
+  it('flags unsourced active part inspection points independently of machine parameters',async()=>{
+    mocks.componentPoints.mockResolvedValue([
+      {inspectionType:'visual',description:'OEM manual',normalRange:null},
+      {inspectionType:'measurement',description:null,normalRange:'{"max":10,"unit":"bar"}'},
+    ]);
+    const response=await GET(request(),params);
+    expect(response.status).toBe(200);
+    const body=await response.json();
+    const row=body.data.checks.find((c:{key:string})=>c.key==='parameters');
+    expect(row.state).toBe('review');
+    expect(row.detail).toContain('1 of 2 active part checkpoints');
+    expect(mocks.componentPoints).toHaveBeenCalledWith({where:{isActive:true,component:{assetId:machine,lifecycleStatus:{not:'decommissioned'}}},
+      select:{inspectionType:true,description:true,normalRange:true}});
   });
   it('does not count unrelated observed meters as production or hour-counter evidence',async()=>{
     mocks.meters.mockResolvedValue([

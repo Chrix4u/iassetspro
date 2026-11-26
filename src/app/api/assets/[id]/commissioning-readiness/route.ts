@@ -5,7 +5,7 @@ import { getPlantScope, canAccessPlantStrict } from '@/lib/plant-scope';
 import { readMachineParameters } from '@/lib/asset-onboarding';
 import { machinePhotoViewpoint } from '@/lib/machine-photo-views';
 import { allowedProductionMeter, allowedRuntimeMeter } from '@/lib/production-shift-survey';
-import { evaluateMachineCommissioningReadiness } from '@/lib/assets/machine-commissioning-readiness';
+import { componentInspectionPointNeedsReview, evaluateMachineCommissioningReadiness } from '@/lib/assets/machine-commissioning-readiness';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,7 +42,7 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
     const eligibleCrewUser={status:'active',plantAccess:{some:{plantId:asset.plantId}}};
     const [
       locationAssignments,registeredComponents,uncommissionedComponents,
-      meters,photos,models,pm,scheduledShifts,shiftsWithLeader,approvedProductionShifts,
+      meters,photos,models,pm,scheduledShifts,shiftsWithLeader,approvedProductionShifts,componentPoints,
     ]=await Promise.all([
       db.assetFunctionalLocationAssignment.count({where:{
         assetId:id,endedAt:null,
@@ -72,6 +72,8 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
         },
       }}),
       db.productionShiftRecord.count({where:{assetId:id,status:'approved'}}),
+      db.componentInspectionPoint.findMany({where:{isActive:true,component:{assetId:id,lifecycleStatus:{not:'decommissioned'}}},
+        select:{inspectionType:true,description:true,normalRange:true}}),
     ]);
     let specification:Record<string,unknown>={};
     try {
@@ -97,6 +99,8 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
       registeredComponents,uncommissionedComponents,
       inspectionParameters:inspectionParameters.length,
       inspectionParametersNeedingReview,
+      componentInspectionPoints:componentPoints.length,
+      componentInspectionPointsNeedingReview:componentPoints.filter(componentInspectionPointNeedsReview).length,
       meterCount:meters.length,
       meterReadingsObserved:meters.filter(m=>m.lastReadingAt!==null).length,
       productionMeters:productionMeters.length,

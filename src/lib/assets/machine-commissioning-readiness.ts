@@ -8,6 +8,8 @@ export interface MachineReadinessEvidence {
   uncommissionedComponents:number;
   inspectionParameters:number;
   inspectionParametersNeedingReview:number;
+  componentInspectionPoints:number;
+  componentInspectionPointsNeedingReview:number;
   meterCount:number;
   meterReadingsObserved:number;
   productionMeters:number;
@@ -23,6 +25,25 @@ export interface MachineReadinessEvidence {
   scheduledShifts:number;
   shiftsWithLeader:number;
   approvedProductionShifts:number;
+}
+/** Existing part checkpoints use the description as the technical reference.
+ * Specialized methods are not reinterpreted as ordinary visual/measurement checks.
+ */
+export function componentInspectionPointNeedsReview(point:{
+  inspectionType:string;description:string|null;normalRange:string|null;
+}):boolean {
+  if(!point.description?.trim())return true;
+  if(point.inspectionType==='visual')return false;
+  if(point.inspectionType!=='measurement')return true;
+  try{
+    const range:unknown=JSON.parse(point.normalRange||'null');
+    if(!range || typeof range!=='object' || Array.isArray(range))return true;
+    const {min,max,unit}=range as Record<string,unknown>;
+    const valid=(v:unknown)=>typeof v==='number'&&Number.isFinite(v);
+    if(typeof unit!=='string'||!unit.trim())return true;
+    if((min==null&&max==null)||(min!=null&&!valid(min))||(max!=null&&!valid(max)))return true;
+    return typeof min==='number'&&typeof max==='number'&&min>max;
+  }catch{return true;}
 }
 const physicalViews=['front','back','left','right','top','bottom'] as const;
 const check=(key:string,title:string,state:ReadinessState,detail:string):CommissioningCheck=>
@@ -50,12 +71,18 @@ export function evaluateMachineCommissioningReadiness(e:MachineReadinessEvidence
       e.uncommissionedComponents>0?
         `${e.uncommissionedComponents}/${e.registeredComponents} components remain uncommissioned drafts`:
         `${e.registeredComponents} registered components; validate against engineering parts book`),
-    check('parameters','Machine inspection parameters',
-      !e.inspectionParameters?'missing':e.nameplate.aiDraft || e.inspectionParametersNeedingReview>0?'review':'configured',
-      !e.inspectionParameters?'Set inspection parameters with limits, units and source references':
-      e.inspectionParametersNeedingReview>0?
-        `${e.inspectionParametersNeedingReview} of ${e.inspectionParameters} parameters need source references or measurement limits; one-sided limits are allowed`:
-        `${e.inspectionParameters} defined; verify all manufacturer limits and units`),
+    check('parameters','Machine and part inspection parameters',
+      !e.inspectionParameters?'missing':
+      e.nameplate.aiDraft || e.inspectionParametersNeedingReview>0 ||
+        e.componentInspectionPointsNeedingReview>0 ||
+        (e.registeredComponents>0 && !e.componentInspectionPoints)?'review':'configured',
+      (!e.inspectionParameters?'Set machine inspection parameters with limits, units and source references.':
+        e.inspectionParametersNeedingReview>0?
+          `${e.inspectionParametersNeedingReview} of ${e.inspectionParameters} parameters need source references or measurement limits; one-sided limits are allowed.`:
+          `${e.inspectionParameters} machine parameters defined; verify manufacturer limits and units.`)+
+      (e.componentInspectionPoints>0?
+        ` ${e.componentInspectionPointsNeedingReview} of ${e.componentInspectionPoints} active part checkpoints need review for source, limits or specialized methods.`:
+        ' No active part checkpoints recorded; define applicable inspection points with the engineer.')),
     check('meters','Production and runtime meters',
       !e.meterCount?'missing':
       !e.productionMeters || !e.runtimeMeters || !e.productionMetersObserved ||

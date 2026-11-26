@@ -1,10 +1,10 @@
 import {describe,expect,it} from 'vitest';
-import {evaluateMachineCommissioningReadiness,type MachineReadinessEvidence} from '@/lib/assets/machine-commissioning-readiness';
+import {componentInspectionPointNeedsReview,evaluateMachineCommissioningReadiness,type MachineReadinessEvidence} from '@/lib/assets/machine-commissioning-readiness';
 
 const empty:MachineReadinessEvidence={
   nameplate:{manufacturer:null,model:null,serial:null,aiDraft:false},
   locationAssignments:0,registeredComponents:0,uncommissionedComponents:0,
-  inspectionParameters:0,inspectionParametersNeedingReview:0,meterCount:0,meterReadingsObserved:0,productionMeters:0,runtimeMeters:0,productionMetersObserved:0,runtimeMetersObserved:0,
+  inspectionParameters:0,inspectionParametersNeedingReview:0,componentInspectionPoints:0,componentInspectionPointsNeedingReview:0,meterCount:0,meterReadingsObserved:0,productionMeters:0,runtimeMeters:0,productionMetersObserved:0,runtimeMetersObserved:0,
   actualPhotoViews:[],privateCadApproved:0,privateCadPending:0,
   oemSourceAuthenticityCertified:false,calendarPm:0,meterPm:0,
   scheduledShifts:0,shiftsWithLeader:0,approvedProductionShifts:0,
@@ -15,7 +15,7 @@ const configured:MachineReadinessEvidence={
   ...empty,
   nameplate:{manufacturer:'OEM',model:'MX-200',serial:'REAL-123',aiDraft:false},
   locationAssignments:1,registeredComponents:13,uncommissionedComponents:0,
-  inspectionParameters:7,inspectionParametersNeedingReview:0,meterCount:2,meterReadingsObserved:2,productionMeters:1,runtimeMeters:1,productionMetersObserved:1,runtimeMetersObserved:1,
+  inspectionParameters:7,inspectionParametersNeedingReview:0,componentInspectionPoints:3,componentInspectionPointsNeedingReview:0,meterCount:2,meterReadingsObserved:2,productionMeters:1,runtimeMeters:1,productionMetersObserved:1,runtimeMetersObserved:1,
   actualPhotoViews:['front','back','left','right','top','bottom'],
   privateCadApproved:1,oemSourceAuthenticityCertified:true,
   calendarPm:2,meterPm:1,scheduledShifts:3,shiftsWithLeader:3,
@@ -46,6 +46,20 @@ describe('witnessed machine commissioning preflight semantics',()=>{
     expect(state(partial,'parameters').detail).toContain('2 of 7 parameters');
     expect(evaluateMachineCommissioningReadiness(partial).softwarePreflightComplete).toBe(false);
     expect(state(configured,'parameters').state).toBe('configured');
+  });
+  it('requires applicable part checkpoints and flags incomplete active part evidence',()=>{
+    expect(state({...configured,componentInspectionPoints:0},'parameters').state).toBe('review');
+    expect(state({...configured,componentInspectionPointsNeedingReview:1},'parameters').detail).toContain('1 of 3 active part checkpoints');
+    expect(state({...configured,componentInspectionPointsNeedingReview:1},'parameters').state).toBe('review');
+  });
+  it('distinguishes valid part measurement limits from invalid or specialized points',()=>{
+    const point={inspectionType:'measurement',description:'Manual 7',normalRange:'{"min":0,"max":null,"unit":"bar"}'};
+    expect(componentInspectionPointNeedsReview(point)).toBe(false);
+    for(const normalRange of [null,'{}','broken','{"min":5,"max":2,"unit":"bar"}','{"min":true,"unit":"bar"}','{"max":5,"unit":""}'])
+      expect(componentInspectionPointNeedsReview({...point,normalRange})).toBe(true);
+    expect(componentInspectionPointNeedsReview({...point,description:' '})).toBe(true);
+    expect(componentInspectionPointNeedsReview({...point,inspectionType:'visual',normalRange:null})).toBe(false);
+    expect(componentInspectionPointNeedsReview({...point,inspectionType:'ndt'})).toBe(true);
   });
   it('never treats a proposed AI make/model or uncommissioned parts as engineer approved',()=>{
     const draft={...configured,

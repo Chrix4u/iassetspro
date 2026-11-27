@@ -3,11 +3,13 @@ import { authenticateAs } from './helpers/auth';
 
 /**
  * Browser regression for the Assets & Machines filter bar.
- * Live UAT is opt-in because it requires a configured UAT planner account;
+ * Runs in disposable Repairs CI, or explicitly opted-in live UAT;
  * this test does not write any assets or maintenance records.
  */
 test('Assets & Machines: five filters in one desktop row without overlap or page overflow', async ({ page, context }) => {
-  test.skip(process.env.RUN_LIVE_ASSET_FILTER_UAT !== '1', 'Requires configured UAT planner');
+  const isolatedCI = process.env.CI === 'true' && (process.env.DATABASE_URL || '').includes('repairs_uat') &&
+    /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/.test(process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000');
+  test.skip(!isolatedCI && process.env.RUN_LIVE_ASSET_FILTER_UAT !== '1', 'Requires isolated Repairs CI or explicit live UAT');
   test.setTimeout(120_000);
   await authenticateAs(context, 'planner');
 

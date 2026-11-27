@@ -1,10 +1,14 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { assignWO, startWO, logTime, completeWO, verifyWO, closeWO, getWO } from './repairs/helpers/api';
 
 const creds = {
   admin: ['admin', 'admin123'],
   manager: ['prod_mgr1', 'password123'],
   operator: ['operator1', 'password123'],
   operatorOtherPlant: ['op2', 'password123'],
+  planner: ['planner1', 'password123'],
+  technician: ['tech1', 'password123'],
+  supervisor: ['supervisor1', 'password123'],
 } as const;
 async function actor(request:APIRequestContext,role:keyof typeof creds) {
   const [username,password]=creds[role];
@@ -180,14 +184,14 @@ test('isolated UAT: planner standards, operator entry, independent approval and 
 });
 
 
-test('isolated demonstration: fresh machine, approved 5500 yards and 5000-yard PM threshold',async ({request},testInfo)=>{
+test('isolated demonstration: fresh machine, 5500 yards, task-level PM generation and verified closeout',async ({request},testInfo)=>{
   if(process.env.CI!=='true'||!process.env.DATABASE_URL?.includes('/platform_e2e?schema=public')||
     process.env.PLAYWRIGHT_BASE_URL!=='http://127.0.0.1:3000'){
     if(process.env.CI)throw new Error('Demonstration must use isolated platform CI');
     test.skip(true,'Only isolated platform CI may create demonstration fixtures');
   }
-  test.setTimeout(120_000);
-  const [admin,manager,operator]=await Promise.all([actor(request,'admin'),actor(request,'manager'),actor(request,'operator')]);
+  test.setTimeout(180_000);
+  const [admin,manager,operator,planner,technician,supervisor]=await Promise.all([actor(request,'admin'),actor(request,'manager'),actor(request,'operator'),actor(request,'planner'),actor(request,'technician'),actor(request,'supervisor')]);
   const seedAssets=await request.get('/api/assets?limit=50',{headers:operator});
   expect(seedAssets.status()).toBe(200);
   const plantId=(await seedAssets.json()).data.find((a:{plantId?:string})=>a.plantId)?.plantId as string;
@@ -261,17 +265,32 @@ test('isolated demonstration: fresh machine, approved 5500 yards and 5000-yard P
     standardUtilizationPct:85,standardSpeed:15};
   const published=await request.post('/api/production-surveys/plans',{headers:manager,data:plan});
   expect(published.status(),await published.text()).toBe(200);
-  const schedule=await request.post('/api/pm-schedules',{headers:admin,data:{
-    title:'Demo bearing maintenance '+suffix,assetId,componentId,frequencyType:'meter',frequencyValue:5000,
-    frequencyUnit:'yards',meterName:outputName,estimatedDuration:25,autoGenerateWO:false,leadDays:0,
+  const pmTask=await request.post('/api/pm-tasks',{headers:{...planner,'X-Plant-ID':plantId},data:{
+    description:'Synthetic bearing lubrication '+suffix,taskType:'lubrication',
+  }});
+  expect(pmTask.status(),await pmTask.text()).toBe(201);
+  const pmTaskId=(await pmTask.json()).data.id;
+  const schedule=await request.post('/api/pm-schedules',{headers:{...planner,'X-Plant-ID':plantId},data:{
+    title:'Demo bearing maintenance '+suffix,assetId,componentId,priority:'high',autoGenerateWO:true,
+    scheduledTasks:[{pmTaskId,sortOrder:0,maintenanceMode:'ubm',equipmentState:'stopped',
+      estimatedMinutes:25,leadDays:0,frequencyInterval:5000,frequencyUnit:'yards',meterName:outputName,
+      assetMeterId:output!.id,recurrenceBasis:'after_completion'}],
   }});
   expect(schedule.status(),await schedule.text()).toBe(201);
+  const scheduleId=(await schedule.json()).data.id as string;
+  expect(scheduleId).toBeTruthy();
   const getThreshold=async()=>{
     const result=await request.get('/api/production-surveys/pm-progress?assetId='+assetId,{headers:manager});
     expect(result.status(),await result.text()).toBe(200);
     return (await result.json()).data.thresholds.find((t:{meterName:string})=>t.meterName===outputName);
   };
   expect(await getThreshold()).toMatchObject({state:'upcoming',currentValue:0,nextDueReading:5000});
+  const evaluate=async()=>{
+    const response=await request.post('/api/pm-schedules/check-due',{headers:{...planner,'X-Plant-ID':plantId},data:{}});
+    expect(response.status(),await response.text()).toBe(200);
+    return ((await response.json()).data.engines.scheduledTasks.results as Array<{scheduleId:string;skipped:boolean;workOrderId:string;scheduledTaskIds:string[]}>).filter(row=>row.scheduleId===scheduleId&&!row.skipped);
+  };
+  expect(await evaluate()).toHaveLength(0);
   const entry=await request.post('/api/production-surveys',{headers:operator,data:{
     ...plan,assetMeterId:output!.id,runtimeMeterId:runtime!.id,runtimeCounterHours:6.5,
     runtimeEvidence:'Synthetic hour-counter evidence',outputQuantity:5500,defectiveQuantity:100,startDelayMinutes:5,
@@ -294,6 +313,53 @@ test('isolated demonstration: fresh machine, approved 5500 yards and 5000-yard P
   expect(meters.find(m=>m.id===output!.id)?.currentValue).toBe(5500);
   expect(meters.find(m=>m.id===runtime!.id)?.currentValue).toBe(6.5);
   expect(await getThreshold()).toMatchObject({state:'due',currentValue:5500,nextDueReading:5000,remaining:0});
+  // The same approved meter observation drives a real task-level PM work order.
+  // Neither generation nor technician/supervisor sign-off may advance the cycle.
+  const generated=await evaluate();
+  expect(generated).toHaveLength(1);
+  const woId=generated[0].workOrderId;
+  expect(woId).toBeTruthy();
+  expect(generated[0].scheduledTaskIds).toHaveLength(1);
+  const token=(headers:{Authorization:string})=>headers.Authorization.replace('Bearer ','');
+  const plannerToken=token(planner),technicianToken=token(technician),supervisorToken=token(supervisor);
+  const userId=async(headers:{Authorization:string})=>{
+    const response=await request.get('/api/auth/me',{headers});
+    expect(response.status(),await response.text()).toBe(200);
+    const user=(await response.json()).data.user;
+    expect(user.plantAccess.some((plant:{id:string})=>plant.id===plantId)).toBe(true);
+    return user.id as string;
+  };
+  const [technicianId,supervisorId]=await Promise.all([userId(technician),userId(supervisor)]);
+  const workOrder=await getWO(plannerToken,woId);
+  expect(workOrder.type).toBe('preventive');
+  expect(workOrder.pmSchedule?.id??workOrder.pmScheduleId).toBe(scheduleId);
+  expect(workOrder.workOrderComponents?.some((link:{componentRegistry?:{id:string}})=>link.componentRegistry?.id===componentId)).toBe(true);
+  expect(await evaluate()).toHaveLength(0);
+  expect(await getThreshold()).toMatchObject({currentValue:5500,nextDueReading:5000});
+  await assignWO(plannerToken,woId,{assignedTo:technicianId,assignedSupervisorId:supervisorId,
+    teamLeaderId:technicianId,teamMembers:[{userId:technicianId,role:'team_leader'}]});
+  await startWO(technicianToken,woId);
+  const tasks=await request.get('/api/work-orders/'+woId+'/tasks',{headers:technician});
+  expect(tasks.status(),await tasks.text()).toBe(200);
+  const checklist=(await tasks.json()).data;
+  expect(checklist).toHaveLength(1);
+  expect(checklist[0].pmScheduleTaskId).toBe(generated[0].scheduledTaskIds[0]);
+  const done=await request.patch('/api/work-orders/'+woId+'/tasks/'+checklist[0].id,{headers:technician,data:{status:'completed'}});
+  expect(done.status(),await done.text()).toBe(200);
+  const stop=await request.post('/api/work-orders/'+woId+'/time-logs/stop',{headers:technician,data:{}});
+  expect(stop.status(),await stop.text()).toBe(200);
+  await logTime(technicianToken,woId,{action:'start',manualHours:0.5,notes:'Synthetic bearing PM execution'});
+  await completeWO(technicianToken,woId,'Synthetic bearing lubrication completed');
+  expect((await getWO(plannerToken,woId)).status).toBe('completed');
+  expect(await getThreshold()).toMatchObject({nextDueReading:5000});
+  await verifyWO(supervisorToken,woId,5);
+  expect((await getWO(plannerToken,woId)).status).toBe('verified');
+  expect(await getThreshold()).toMatchObject({nextDueReading:5000});
+  await closeWO(plannerToken,woId);
+  expect((await getWO(plannerToken,woId)).status).toBe('closed');
+  expect(await getThreshold()).toMatchObject({state:'upcoming',currentValue:5500,nextDueReading:10500,remaining:5000});
+  expect(await evaluate()).toHaveLength(0);
+  expect((await getMeters()).find(m=>m.id===output!.id)?.currentValue).toBe(5500);
   for(const group of ['day','week','month','quarter','year']){
     const report=await request.get('/api/production-surveys/report?assetId='+assetId+'&group='+group+
       '&from='+productionDate+'&to='+productionDate,{headers:manager});

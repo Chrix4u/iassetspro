@@ -7,6 +7,8 @@ import { machinePhotoViewpoint } from '@/lib/machine-photo-views';
 import { allowedProductionMeter, allowedRuntimeMeter } from '@/lib/production-shift-survey';
 import { componentInspectionPointNeedsReview, evaluateMachineCommissioningReadiness } from '@/lib/assets/machine-commissioning-readiness';
 
+import { assertPrivateCadStorageReady, privateCadStorageRoot } from '@/lib/smart-anatomy/private-cad-storage';
+
 export const dynamic = 'force-dynamic';
 
 /**
@@ -91,7 +93,14 @@ export async function GET(request:NextRequest,{params}:{params:Promise<{id:strin
     ).length;
     const productionMeters=meters.filter(m=>allowedProductionMeter(m.meterType));
     const runtimeMeters=meters.filter(m=>allowedRuntimeMeter(m.meterType,m.unit));
+    const cadRoot=privateCadStorageRoot();
+    let cadStorageState:'ready'|'unconfigured'|'unsafe'='unconfigured';
+    if(cadRoot){
+      try{await assertPrivateCadStorageReady(cadRoot);cadStorageState='ready';}
+      catch{cadStorageState='unsafe';}
+    }
     const result=evaluateMachineCommissioningReadiness({
+      cadStorageState,
       nameplate:{
         manufacturer:asset.manufacturer,model:asset.model,serial:asset.serialNumber,aiDraft,
       },

@@ -14,14 +14,15 @@ This is the public-safe engineering execution ledger. Do not include customer id
 - [x] Expanded 36-route operational audit (#717).
 - [x] Final 17-route standalone audit (#719).
 - [x] Three contextual detail routes passed on first contextual audit.
-- [ ] Final contextual viewer retest and combined 130-route audit (#722); confirm exact head and main.
+- [x] Final contextual viewer retest and combined 130-route navigation audit (#722): exact-head CI 45967138428 and combined main CI 45976070349 passed; subsequently deployed. Workflow acceptance remains separate.
 - [ ] Review screenshots at desktop/mobile, including intermediate widths and overflow in filter bars, tables, dialogs and navigation.
 - [ ] Walk through complete isolated onboarding: organization, plant, departments, functional location hierarchy, equipment position, asset category and registration, assigned users.
 - [ ] Verify primary and non-primary location assignment and historical snapshots; no implicit promotion.
 - [ ] Create multilevel assemblies/parts, parameters, inspection criteria and explicit opening meter readings including zero; exercise edit, view, search and error recovery.
 - [ ] Verify equipment image/nameplate ingestion, AI suggestions, human approval, duplicate prevention and source provenance.
 - [ ] Verify licensed real CAD/scan import, model validation, component mapping, zoom/pan/rotate, exploded view and mobile controls. Clearly distinguish illustrative geometry; physical validation requires authorized evidence.
-- [ ] Check cross-plant asset/component/part relationships, inventory source and work order integrity (#723). Test concurrent duplicate/quantity handling and historical inconsistencies without mutating real records.
+- [x] Installed spare-part plant and provenance integrity (#723): ten regression tests, exact-head CI 45976093433, combined main CI 46023986837 and deployment 46027449260 passed.
+- [ ] Independently verify remaining cross-plant asset/component relationships and concurrent duplicate/quantity handling and historical inconsistencies without mutating real records.
 
 ## P0 — Production operations
 - [ ] Shift definitions including overnight, crew and team leader, planner targets and published plans.
@@ -59,9 +60,10 @@ This is the public-safe engineering execution ledger. Do not include customer id
 - [ ] Native/mobile/desktop packaging only where separately specified and applicable; do not claim a browser audit verifies native clients.
 
 ## Current checkpoint
-- Latest verified deployed release: b8105fab33dc (deployment run 45921259125).
-- Main b5a6129d contains final standalone navigation audit, combined CI pending at checkpoint.
-- Contextual audit #722 head 255cb380: final viewer empty-scene assertion corrected; full CI pending.
-- Installed part integrity #723 head a25d8194: implementation and ten regression tests committed, CI pending.
-- Next: verify those exact heads; resolve any failures; merge and deploy through required gates. Continue integrated workflow acceptance independently.
+- Latest verified deployed release: 9ab5eb0959aa (CI 46023986837, deployment 46027449260; public health endpoint HTTP 200).
+- Main 237dd10a includes responsive twin layout #726; CI 46032958624 in progress at checkpoint.
+- Integrated production-to-PM closeout #725 head 1b43422b: lint, types, unit tests passed; full CI 46033149251 in progress.
+- Inspection overview #728 head 18048197: corrected incorrectly scoped browser locator; CI 46033962313 in progress.
+- Worker labor rates #727 head 43a6ce0c: corrected user-directory loading and active-vs-historical rate assertion; CI 46033977644 in progress; draft until verified.
+- Next: verify exact heads, resolve remaining failures, merge only passing work and deploy tested main artifact. Continue isolated onboarding, production/PM/repairs acceptance and real CAD validation separately.
 - External acceptance gates: authorized equipment evidence, genuine OEM geometry rights and validation, controlled reference data, isolated staging and verified recovery. Do not mark these complete without evidence.

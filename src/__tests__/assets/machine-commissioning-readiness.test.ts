@@ -77,6 +77,15 @@ describe('witnessed machine commissioning preflight semantics',()=>{
     expect(state(unauthentic,'cad').detail).toContain('unverified');
     expect(state({...configured,privateCadApproved:0,privateCadPending:4},'cad').state).toBe('missing');
   });
+  it('never counts a model as usable if private storage is disabled or unsafe',()=>{
+    for(const cadStorageState of ['unconfigured','unsafe'] as const){
+      const evidence={...configured,cadStorageState};
+      expect(state(evidence,'cad').state).toBe('missing');
+      expect(state(evidence,'cad').detail).toContain('administrator');
+      expect(evaluateMachineCommissioningReadiness(evidence).softwarePreflightComplete).toBe(false);
+    }
+    expect(state({...configured,cadStorageState:'ready'},'cad').state).toBe('configured');
+  });
   it('requires actual observed output and runtime counters, not an unrelated meter reading',()=>{
     expect(state({...configured,productionMeters:0,productionMetersObserved:0},'meters').state).toBe('review');
     expect(state({...configured,runtimeMeters:0,runtimeMetersObserved:0},'meters').state).toBe('review');

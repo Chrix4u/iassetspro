@@ -21,14 +21,16 @@ This is the public-safe engineering execution ledger. Do not include customer id
 - [ ] Create multilevel assemblies/parts, parameters, inspection criteria and explicit opening meter readings including zero; exercise edit, view, search and error recovery.
 - [ ] Verify equipment image/nameplate ingestion, AI suggestions, human approval, duplicate prevention and source provenance.
 - [ ] Verify licensed real CAD/scan import, model validation, component mapping, zoom/pan/rotate, exploded view and mobile controls. Clearly distinguish illustrative geometry; physical validation requires authorized evidence.
-- [ ] Check cross-plant asset/component/part relationships, inventory source and work order integrity (#723). Test concurrent duplicate/quantity handling and historical inconsistencies without mutating real records.
+- [x] Installed spare-part plant and provenance integrity (#723): ten regression tests, merged and deployed.
+- [ ] Independently verify remaining cross-plant asset/component relationships, concurrent duplicate/quantity handling and historical inconsistencies without mutating real records.
 
 ## P0 — Production operations
 - [ ] Shift definitions including overnight, crew and team leader, planner targets and published plans.
 - [ ] Restrict operator entry to assigned shift/asset and authorized time; validate target inheritance, units, delays, stoppages, defects and meter readings.
 - [ ] Verify independent approval, repeat submission/idempotency, meter integration, correction audit and unauthorized role rejection.
 - [ ] Compare production formulas and period aggregation to controlled workbook fixtures; daily, weekly, monthly, quarterly, yearly and custom interval exports; distinguish units and missing values.
-- [ ] Execute integrated asset → production plan → operator submission → approval → usage-based PM due → work order → completion and next due.
+- [x] Integrated isolated production meter → PM due → work-order closure → 10,500-yard recurrence regression (#725, CI 46033149251); merged.
+- [ ] Complete owner-guided commissioning demonstration from fresh asset registration through production, PM and repairs.
 
 ## P0 — Preventive maintenance
 - [ ] Task library, templates, part-specific assignments, calendar and usage frequencies only.
@@ -59,7 +61,9 @@ This is the public-safe engineering execution ledger. Do not include customer id
 - [ ] Native/mobile/desktop packaging only where separately specified and applicable; do not claim a browser audit verifies native clients.
 
 ## Current checkpoint
-- Verified live build 9ab5eb09; deployment 46027449260 passed. Installed part integrity #723 merged and deployed.
-- Standalone viewer responsive correction #726 passed 46025805370 and merged as 237dd10a; combined deployment pending.
-- Consolidated final acceptance branch #725 includes #727 labor configuration and #728 readable inspection parameters. Previous artifacts confirmed those views rendered; corrected test selectors and dialog close behavior. Replaced failed test-only DB import with real administrator rate API in the integrated PM workflow.
-- Next: exact-head combined CI, fix failures only, merge, deploy, verify live health, then isolated owner demonstration. Do not claim full physical acceptance or OEM provenance without authorized evidence.
+- Verified live build 237dd10a; CI 46032958624 and deployment 46035498689 passed; public health HTTP 200. Includes responsive standalone viewer and installed-part integrity.
+- Consolidated #725 exact head 1b43422b passed full CI 46033149251; merged as a1629794. Includes integrated production/PM, labor-rate administration and inspection overview.
+- Inspection overview #728 exact head 18048197 passed CI 46033962313; merged as d15a90b9. Combined main CI 46044925404 pending at checkpoint.
+- Separate labor-rate draft #727 is superseded functionally by #725; its standalone test failed because the dialog remained open on the second viewport. Corrected head f2e1b52b; do not merge duplicate changes without comparison. Consolidated test already includes reload and dialog closure.
+- Prior checkpoint #729 conflicts with updated main; this ledger reconciles its evidence without replacing newer implementation notes.
+- Next: verify combined main CI and deployment, then isolated onboarding, production/PM/repairs acceptance. Physical OEM geometry and owner acceptance remain separate, evidence-dependent gates.

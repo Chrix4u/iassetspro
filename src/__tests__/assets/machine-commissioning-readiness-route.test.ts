@@ -3,6 +3,7 @@ import {NextRequest} from 'next/server';
 
 const mocks=vi.hoisted(()=>({
   getSession:vi.fn(),hasPermission:vi.fn(),isAdmin:vi.fn(),
+  cadRoot:vi.fn(),cadReady:vi.fn(),
   getPlantScope:vi.fn(),canAccessPlantStrict:vi.fn(),
   asset:vi.fn(),location:vi.fn(),component:vi.fn(),
   meters:vi.fn(),photos:vi.fn(),models:vi.fn(),pm:vi.fn(),
@@ -14,6 +15,9 @@ vi.mock('@/lib/auth',()=>({
 }));
 vi.mock('@/lib/plant-scope',()=>({
   getPlantScope:mocks.getPlantScope,canAccessPlantStrict:mocks.canAccessPlantStrict,
+}));
+vi.mock('@/lib/smart-anatomy/private-cad-storage',()=>({
+  privateCadStorageRoot:mocks.cadRoot,assertPrivateCadStorageReady:mocks.cadReady,
 }));
 vi.mock('@/lib/db',()=>({db:{
   asset:{findUnique:mocks.asset},
@@ -38,6 +42,8 @@ const params={params:Promise.resolve({id:machine})};
 beforeEach(()=>{
   vi.resetAllMocks();
   mocks.getSession.mockReturnValue({userId:'plant-reader'});
+  mocks.cadRoot.mockReturnValue('/private-test-cad');
+  mocks.cadReady.mockResolvedValue(undefined);
   mocks.isAdmin.mockReturnValue(false);
   mocks.hasPermission.mockImplementation((_session:unknown,permission:string)=>
     permission==='assets.view');
@@ -115,6 +121,24 @@ describe('plant-scoped live machine commissioning readiness API',()=>{
     expect(row('production').state).toBe('missing');
     expect(body.data.physicalAcceptanceComplete).toBe(false);
     expect(response.headers.get('cache-control')).toContain('no-store');
+  });
+  it('identifies disabled storage without exposing internal paths',async()=>{
+    mocks.cadRoot.mockReturnValue(null);
+    const response=await GET(request(),params);
+    expect(response.status).toBe(200);
+    const row=(await response.json()).data.checks.find((c:{key:string})=>c.key==='cad');
+    expect(row.state).toBe('missing');
+    expect(row.detail).toContain('not configured');
+    expect(mocks.cadReady).not.toHaveBeenCalled();
+  });
+  it('reports unsafe CAD storage without leaking underlying filesystem errors',async()=>{
+    mocks.cadReady.mockRejectedValue(new Error('Private filesystem path'));
+    const response=await GET(request(),params);
+    expect(response.status).toBe(200);
+    const row=(await response.json()).data.checks.find((c:{key:string})=>c.key==='cad');
+    expect(row.state).toBe('missing');
+    expect(row.detail).toContain('safety check');
+    expect(row.detail).not.toContain('Private filesystem path');
   });
   it('requires source references and at least one measurement bound, but accepts visual checks and one-sided limits',async()=>{
     mocks.asset.mockResolvedValueOnce({

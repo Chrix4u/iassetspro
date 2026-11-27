@@ -3,6 +3,7 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
+import { loadavg } from 'node:os';
 import { getSession, isAdmin } from '@/lib/auth';
 import { createLogger } from '@/lib/logger';
 import { db } from '@/lib/db';
@@ -66,10 +67,11 @@ export async function GET(request: NextRequest) {
     // ── OpenTelemetry store stats ────────────────────────────────────────────
     try {
       const otelStats = OpenTelemetryService.getStats();
+      const { maxSpans } = OpenTelemetryService.getConfig();
       checks.tracing = {
-        status: otelStats.totalSpans < otelStats.maxSpans ? 'healthy' : 'degraded',
+        status: otelStats.totalSpans < maxSpans ? 'healthy' : 'degraded',
         latencyMs: 0,
-        details: `${otelStats.activeSpans} active, ${otelStats.totalSpans}/${otelStats.maxSpans} stored, ${otelStats.completedTraces} completed`,
+        details: `${otelStats.activeSpans} active, ${otelStats.totalSpans}/${maxSpans} stored, ${otelStats.completedTraces} completed`,
       };
     } catch {
       checks.tracing = { status: 'unhealthy', latencyMs: 0, details: 'OpenTelemetry service unavailable' };
@@ -176,7 +178,8 @@ export async function GET(request: NextRequest) {
             externalMB: Math.round(mem.external / 1024 / 1024),
           },
           cpu: {
-            loadAvg: process.cpuUsage ? Array.from(process.cpuUsage().values()).map(v => v / 1_000_000) : [],
+            loadAvg: loadavg(),
+            usageSeconds: Object.fromEntries(Object.entries(process.cpuUsage()).map(([key, value]) => [key, value / 1_000_000])),
           },
         },
       },

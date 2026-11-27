@@ -117,7 +117,7 @@ export default function RepairDetailReportPage() {
   };
 
   return (
-    <div className="page-content">
+    <div className="page-content w-full min-w-0 max-w-full overflow-x-hidden">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight">Repair Detail Report</h1>
@@ -165,7 +165,7 @@ export default function RepairDetailReportPage() {
       {/* Filters */}
       <Card className="border-0 shadow-sm dark:bg-card mt-4">
         <CardContent className="p-4">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-[minmax(9rem,1fr)_minmax(9rem,1fr)_minmax(8rem,.85fr)_minmax(8rem,.85fr)_minmax(10rem,1fr)_auto] xl:items-end">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto] xl:items-end">
             <div className="min-w-0 space-y-1">
               <Label className="text-xs">Date From</Label>
               <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-full" />
@@ -201,10 +201,10 @@ export default function RepairDetailReportPage() {
             {plants.length > 0 && (
               <div className="min-w-0 space-y-1">
                 <Label className="text-xs">Plant</Label>
-                <Select value={plantId} onValueChange={setPlantId}>
+                <Select value={plantId || 'all'} onValueChange={value => setPlantId(value === 'all' ? '' : value)}>
                   <SelectTrigger className="w-full"><SelectValue placeholder="All Plants" /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">All Plants</SelectItem>
+                    <SelectItem value="all">All Plants</SelectItem>
                     {plants.map((p: any) => (
                       <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                     ))}
@@ -227,7 +227,7 @@ export default function RepairDetailReportPage() {
       </Card>
 
       {/* Data Table */}
-      <Card className="border-0 shadow-sm dark:bg-card mt-4 overflow-hidden">
+      <Card className="w-full min-w-0 max-w-full border-0 shadow-sm dark:bg-card mt-4 overflow-hidden">
         <CardContent className="p-0">
           {loading ? (
             <div className="flex items-center justify-center py-16">
@@ -241,7 +241,7 @@ export default function RepairDetailReportPage() {
               <p className="text-xs mt-1">Adjust the filters or complete repair work orders to see data here</p>
             </div>
           ) : (
-            <div className="overflow-x-auto overscroll-x-contain">
+            <div className="w-full min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
               <Table className="min-w-[900px]">
                 <TableHeader>
                   <TableRow className="bg-muted/50">

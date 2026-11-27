@@ -82,8 +82,8 @@ export function AssetsPage() {
   // If navigated with condition='at_risk', pre-filter to poor/critical condition
   const [atRiskFilter, setAtRiskFilter] = useState(false);
   useEffect(() => {
-    if (pageParams?.id && !detailId) setDetailId(pageParams.id);
-    if (pageParams?.condition === 'at_risk') setAtRiskFilter(true);
+    setDetailId(pageParams?.id || null);
+    setAtRiskFilter(pageParams?.condition === 'at_risk');
   }, [pageParams]);
 
   const emptyForm = { name: '', assetTag: '', serialNumber: '', categoryId: '', manufacturer: '', model: '', yearManufactured: '', acquisitionCondition: 'new', status: 'operational', criticality: 'medium', location: '', building: '', floor: '', area: '', plantId: '', departmentId: '', assignedToId: '', parentId: '', description: '', purchaseDate: '', purchaseCost: '', expectedLifeYears: '', functionalLocationId: '' };
@@ -393,7 +393,7 @@ export function AssetsPage() {
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8"><MoreHorizontal className="h-4 w-4" /></Button></DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => setDetailId(a.id)}><Eye className="h-3.5 w-3.5 mr-2" />View</DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => navigate('assets-machines', { ...pageParams, id: a.id, tab: 'overview' })}><Eye className="h-3.5 w-3.5 mr-2" />View</DropdownMenuItem>
                         {(hasPermission('assets.update') || isAdmin()) && <DropdownMenuItem onClick={() => openEdit(a)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>}
                         {(hasPermission('assets.delete') || isAdmin()) && <>
                         <DropdownMenuSeparator />
@@ -598,9 +598,14 @@ export function AssetsPage() {
       </ResponsiveDialog>
 
       {/* Detail Side Sheet */}
-      <Sheet open={!!detailId} onOpenChange={(open) => { if (!open) setDetailId(null); }}>
+      <Sheet open={!!detailId} onOpenChange={(open) => {
+        if (!open) {
+          setDetailId(null);
+          if (pageParams?.id) navigate('assets-machines', pageParams.condition ? { condition: pageParams.condition } : {}, true);
+        }
+      }}>
         <SheetContent className="!w-screen !max-w-none sm:!max-w-none md:!max-w-none lg:!max-w-none xl:!max-w-none 2xl:!max-w-none h-dvh overflow-y-auto overflow-x-hidden p-0 gap-0">
-          {detailId && <AssetDetailPage id={detailId} />}
+          {detailId && <AssetDetailPage key={detailId} id={detailId} />}
         </SheetContent>
       </Sheet>
 

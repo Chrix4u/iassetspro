@@ -61,9 +61,10 @@ This is the public-safe engineering execution ledger. Do not include customer id
 - [ ] Native/mobile/desktop packaging only where separately specified and applicable; do not claim a browser audit verifies native clients.
 
 ## Current checkpoint
-- Verified live build 237dd10a; CI 46032958624 and deployment 46035498689 passed; public health HTTP 200. Includes responsive standalone viewer and installed-part integrity.
-- Consolidated #725 exact head 1b43422b passed full CI 46033149251; merged as a1629794. Includes integrated production/PM, labor-rate administration and inspection overview.
-- Inspection overview #728 exact head 18048197 passed CI 46033962313; merged as d15a90b9. Combined main CI 46044925404 pending at checkpoint.
-- Separate labor-rate draft #727 is superseded functionally by #725; its standalone test failed because the dialog remained open on the second viewport. Corrected head f2e1b52b; do not merge duplicate changes without comparison. Consolidated test already includes reload and dialog closure.
-- Prior checkpoint #729 conflicts with updated main; this ledger reconciles its evidence without replacing newer implementation notes.
-- Next: verify combined main CI and deployment, then isolated onboarding, production/PM/repairs acceptance. Physical OEM geometry and owner acceptance remain separate, evidence-dependent gates.
+- Live functional build d15a90b9 passed full CI 46044925404 and Deploy 46047719210; public health HTTP 200. Includes integrated production/PM, worker labor administration, responsive viewer and readable inspection parameters.
+- Multilevel hierarchy #731 passed full CI 46045916072; independent location history #732 passed 46046323922; primary relocation and frozen MR/WO history #733 passed 46050176933. All merged; combined main 3005c550 CI 46052647826 pending.
+- Private CAD runtime storage enabled and verified by storage preflight, successful restart, healthy database/cache and anonymous access denial. Active and rollback environment configuration aligned. Local encrypted backup service successful; off-server restore remains unverified.
+- Commissioning preflight #734 includes primary assignment requirement and disabled/unsafe CAD storage detection; latest head 6160c627 CI 46051650427 pending.
+- Photo provenance and same-machine hotspot integrity #735 forward-ports tested draft changes; full CI required. Draft #669 physical authenticity, independently approved actual-machine geometry, external backup restore and witnessed acceptance remain separate gates.
+- #727 and #729 superseded by consolidated #725 and reconciled #730 respectively; do not merge stale duplicates.
+- Next: merge only exact-head passing checks, deploy combined main, verify health and CAD readiness; execute remaining isolated UI commissioning and report parity, followed by witnessed site acceptance. Never certify physical machine or OEM source from synthetic fixtures.

@@ -3,11 +3,13 @@ import { authenticateAs } from './helpers/auth';
 import { getToken, lookupPlantId } from './helpers/api';
 
 /** Regression for eight overlapping inspection filters in the PM worksheet. */
-test('PM Action List filters use three spacious controls above five without overlap', async ({ page, context }) => {
-  test.skip(process.env.RUN_LIVE_PM_FILTER_UAT !== '1', 'Requires pre-existing TEMA-UAT-01 live UAT plant');
+test('PM inspection filters remain readable without overlap at three viewports', async ({ page, context }) => {
+  const isolatedCI = process.env.CI === 'true' && (process.env.DATABASE_URL || '').includes('repairs_uat') &&
+    /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\/?$/.test(process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000');
+  test.skip(!isolatedCI && process.env.RUN_LIVE_PM_FILTER_UAT !== '1', 'Requires isolated Repairs CI or explicit live UAT');
   test.setTimeout(100_000);
   const token = await getToken('planner');
-  const plant = await lookupPlantId(token, 'TEMA-UAT-01');
+  const plant = await lookupPlantId(token, isolatedCI ? 'PLANT-A' : 'TEMA-UAT-01');
   await authenticateAs(context, 'planner');
 
   for (const viewport of [{ width: 1440, height: 900 }, { width: 800, height: 900 }, { width: 390, height: 844 }]) {

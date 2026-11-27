@@ -148,7 +148,6 @@ export function PmAssignmentTaskCard({ task, index, total, meters, conditions, s
             <SelectContent>
               <SelectItem value="time_day">Time / Day</SelectItem>
               <SelectItem value="meter">Meter Based</SelectItem>
-              <SelectItem value="event">Event / Condition</SelectItem>
             </SelectContent>
           </Select>
         </div>

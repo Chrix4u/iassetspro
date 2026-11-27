@@ -64,6 +64,22 @@ for(const route of routes){
     await expect(panel.getByText(/has no 3D scenes yet/)).toBeVisible();
     await expect(panel.getByText('Failed to Load Scene',{exact:true})).toHaveCount(0);
     await expect(panel.getByRole('button',{name:'Reset Camera',exact:true})).toBeVisible();
+    const canvasRegion=panel.getByTestId('embedded-3d-canvas-region');
+    const treeRegion=panel.getByTestId('embedded-3d-tree-region');
+    await expect(canvasRegion).toBeVisible();
+    await expect(treeRegion).toBeVisible();
+    const canvas=await canvasRegion.boundingBox();
+    const tree=await treeRegion.boundingBox();
+    expect(canvas).toBeTruthy();expect(tree).toBeTruthy();
+    if(width===390){
+     expect(canvas!.width).toBeGreaterThan(280);
+     expect(canvas!.height).toBeGreaterThan(220);
+     expect(tree!.y).toBeGreaterThanOrEqual(canvas!.y+canvas!.height-2);
+     const reset=await panel.getByRole('button',{name:'Reset Camera',exact:true}).boundingBox();
+     expect(reset).toBeTruthy();
+     expect(reset!.x).toBeGreaterThanOrEqual(0);
+     expect(reset!.x+reset!.width).toBeLessThanOrEqual(width);
+    }
    }
    await expect(page.getByText(/Something went wrong|Page failed to load|Application Error/i)).toHaveCount(0);
    await expect.poll(()=>panel.evaluate(el=>Math.max(document.documentElement.scrollWidth-window.innerWidth,el.getBoundingClientRect().right-window.innerWidth,-el.getBoundingClientRect().left))).toBeLessThanOrEqual(3);

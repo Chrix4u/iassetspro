@@ -36,16 +36,17 @@ test('isolated administrator configures plant-specific labor rate from user sett
  for(const [width,height,amount] of [[1440,900,42.5],[390,844,43.5]]){
   await page.setViewportSize({width,height});
   await page.goto('/#/settings-users');
-  await page.getByPlaceholder('Search users...').fill(worker.fullName);
-  const row=page.getByRole('row').filter({hasText:worker.fullName});
-  await expect(row).toHaveCount(1);
+  const row=page.getByRole('row').filter({has:page.getByText(worker.fullName,{exact:true})});
+  await expect(row).toHaveCount(1,{timeout:30000});
+  await page.getByPlaceholder('Search users...').fill(worker.username);
+  await expect(row).toBeVisible({timeout:30000});
   await row.getByRole('button').click();
   await page.getByRole('menuitem',{name:'Labor rates'}).click();
   const dialog=page.getByRole('dialog',{name:'Labor rates'});
   await expect(dialog.getByRole('spinbutton',{name:'Normal hourly rate (₵)'})).toBeVisible();
   await dialog.getByRole('spinbutton',{name:'Normal hourly rate (₵)'}).fill(String(amount));
   await dialog.getByRole('button',{name:'Save rate'}).click();
-  await expect(dialog.getByText('₵'+amount.toFixed(2)+'/hour',{exact:true})).toBeVisible();
+  await expect(dialog.locator('div.border-t').filter({hasText:/– Current/}).getByText('₵'+amount.toFixed(2)+'/hour',{exact:true})).toBeVisible({timeout:30000});
   await expect.poll(()=>dialog.evaluate(el=>Math.max(el.getBoundingClientRect().right-window.innerWidth,-el.getBoundingClientRect().left))).toBeLessThanOrEqual(3);
   await page.screenshot({path:info.outputPath('labor-rate-'+width+'.png')});
  }

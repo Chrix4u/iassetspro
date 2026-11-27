@@ -31,12 +31,15 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
  expect(loc.status(),await loc.text()).toBe(201);
  const locationCode=(await loc.json()).data.locationCode as string;
  const machineCode='CI-ONB-'+suffix,partCode='CI-ONB-MOTOR-'+suffix;
+ const assemblyCode='CI-ONB-DRIVE-'+suffix,subassemblyCode='CI-ONB-SHAFT-'+suffix;
  const data={
   Machines:[{machineCode,machineName:'Isolated CI Machine',plantCode:plant.code,
     categoryCode:category.code,locationCode,manufacturer:'CI simulated OEM',model:'Isolation',
     serialNumber:'CI-SN-'+suffix,criticality:'high',description:'No customer production data'}],
   Parts:[{machineCode,componentCode:partCode,name:'Motor bearing',componentType:'part',
-   parentCode:'',manufacturer:'CI',modelNumber:'CI-M-1',criticality:'high'}],
+   parentCode:subassemblyCode,manufacturer:'CI',modelNumber:'CI-M-1',criticality:'high'},
+   {machineCode,componentCode:subassemblyCode,name:'Shaft assembly',componentType:'subassembly',parentCode:assemblyCode,manufacturer:'CI',modelNumber:'CI-S-1',criticality:'high'},
+   {machineCode,componentCode:assemblyCode,name:'Drive assembly',componentType:'assembly',parentCode:'',manufacturer:'CI',modelNumber:'CI-D-1',criticality:'high'}],
   Parameters:[
    {ownerType:'machine',ownerCode:machineCode,name:'Temperature',inspectionType:'measurement',
     unit:'°C',min:0,max:90,reference:'CI reference only'},
@@ -50,13 +53,17 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
   Visuals:[],
  };
  const invalid=await request.post('/api/assets/onboard-bulk',{headers,data:{
-  ...data,Parts:[{...data.Parts[0],parentCode:'NOT-A-REAL-PARENT'}],dryRun:true}});
+  ...data,Parts:[{...data.Parts[0],parentCode:'NOT-A-REAL-PARENT'},...data.Parts.slice(1)],dryRun:true}});
  expect(invalid.status()).toBe(400);
+ // A validly coded but circular hierarchy must also fail before any writes.
+ const cyclic=await request.post('/api/assets/onboard-bulk',{headers,data:{...data,
+  Parts:data.Parts.map(p=>p.componentCode===assemblyCode?{...p,parentCode:partCode}:p),dryRun:false}});
+ expect(cyclic.status(),await cyclic.text()).toBe(400);
  const missing=await request.get('/api/assets?search='+machineCode,{headers});
  expect((await missing.json()).data.some((a:{assetTag:string})=>a.assetTag===machineCode)).toBe(false);
  const dry=await request.post('/api/assets/onboard-bulk',{headers,data:{...data,dryRun:true}});
  expect(dry.status(),await dry.text()).toBe(200);
- expect((await dry.json()).data.counts).toMatchObject({machines:1,parts:1,parameters:2,meters:3});
+ expect((await dry.json()).data.counts).toMatchObject({machines:1,parts:3,parameters:2,meters:3});
  const commit=await request.post('/api/assets/onboard-bulk',{headers,data:{...data,dryRun:false}});
  expect(commit.status(),await commit.text()).toBe(201);
  const imported=(await commit.json()).data;
@@ -69,9 +76,16 @@ test('isolated UAT: factory workbook atomically commissions machine, coded locat
  expect(JSON.parse(m.specification).inspectionParameters[0].max).toBe(90);
  const list=await request.get('/api/component-registry?assetId='+machineId,{headers});
  expect(list.status()).toBe(200);
- const parts=(await list.json()).data as Array<{id:string;componentCode:string}>;
+ const parts=(await list.json()).data as Array<{id:string;componentCode:string;parentId:string|null;componentType:string}>;
  const part=parts.find(p=>p.componentCode===partCode);
  expect(part?.id).toBeTruthy();
+ const assembly=parts.find(p=>p.componentCode===assemblyCode);
+ const subassembly=parts.find(p=>p.componentCode===subassemblyCode);
+ expect(parts).toHaveLength(3);
+ expect(assembly?.id).toBeTruthy();expect(subassembly?.id).toBeTruthy();
+ expect(assembly).toMatchObject({parentId:null,componentType:'assembly'});
+ expect(subassembly).toMatchObject({parentId:assembly!.id,componentType:'subassembly'});
+ expect(part).toMatchObject({parentId:subassembly!.id,componentType:'part'});
  const checks=await request.get('/api/component-registry/'+part!.id+'/inspections',{headers});
  expect(checks.status(),await checks.text()).toBe(200);
  const rows=(await checks.json()).data;

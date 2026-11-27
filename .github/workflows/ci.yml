@@ -519,6 +519,11 @@ jobs:
           IASSETSPRO_PLATFORM_E2E_FIXTURE: '1'
         run: bunx tsx scripts/enable-failure-analysis-platform-e2e.ts
 
+      - name: Enable remaining licensed screens in isolated platform fixture
+        env:
+          IASSETSPRO_PLATFORM_E2E_FIXTURE: '1'
+        run: bunx tsx scripts/enable-remaining-audit-modules-platform-e2e.ts
+
       - name: Download production standalone build
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:

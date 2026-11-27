@@ -60,8 +60,10 @@ for(const route of routes){
    if(route==='asset-detail')await expect(panel.getByRole('tab',{name:/^Components/})).toBeVisible();
    if(route==='digital-twin-viewer'){
     await expect(panel.getByRole('button',{name:'Back to Twins'})).toBeVisible();
-    await expect(panel.getByRole('heading',{name:'No Model Loaded'})).toBeVisible({timeout:30000});
+    await expect(panel.getByRole('heading',{name:'No Scenes Available',exact:true})).toBeVisible({timeout:30000});
+    await expect(panel.getByText(/has no 3D scenes yet/)).toBeVisible();
     await expect(panel.getByText('Failed to Load Scene',{exact:true})).toHaveCount(0);
+    await expect(panel.getByRole('button',{name:'Reset Camera',exact:true})).toBeVisible();
    }
    await expect(page.getByText(/Something went wrong|Page failed to load|Application Error/i)).toHaveCount(0);
    await expect.poll(()=>panel.evaluate(el=>Math.max(document.documentElement.scrollWidth-window.innerWidth,el.getBoundingClientRect().right-window.innerWidth,-el.getBoundingClientRect().left))).toBeLessThanOrEqual(3);

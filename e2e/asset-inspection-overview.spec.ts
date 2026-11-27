@@ -29,7 +29,7 @@ test('registered inspection parameters are readable in machine details at deskto
   const overview=page.getByTestId('machine-inspection-overview');
   await expect(overview).toBeVisible({timeout:30000});
   // Section names are visible headings; locate their actual containing section.
-  const instrument=overview.locator('section').filter({has:overview.getByRole('heading',{name:'Vibration',exact:true})});
+  const instrument=overview.locator('section').filter({has:page.getByRole('heading',{name:'Vibration',exact:true})});
   await expect(instrument.getByText('Instrument',{exact:true})).toBeVisible();
   await expect(instrument.getByText('0',{exact:true})).toBeVisible();
   await expect(instrument.getByText('4.5',{exact:true})).toBeVisible();

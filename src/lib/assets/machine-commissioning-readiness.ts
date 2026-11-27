@@ -17,6 +17,7 @@ export interface MachineReadinessEvidence {
   productionMetersObserved:number;
   runtimeMetersObserved:number;
   actualPhotoViews:string[];
+  cadStorageState?:'ready'|'unconfigured'|'unsafe';
   privateCadApproved:number;
   privateCadPending:number;
   oemSourceAuthenticityCertified:boolean;
@@ -94,7 +95,10 @@ export function evaluateMachineCommissioningReadiness(e:MachineReadinessEvidence
       !missingViews.length?'Six uploaded views; ensure photos match this installed machine':
       'Missing actual '+missingViews.join(', ')+' views; AI pictures do not count'),
     check('cad','Source-backed private 3D CAD',
-      !e.privateCadApproved?'missing':!e.oemSourceAuthenticityCertified?'review':'configured',
+      e.cadStorageState==='unconfigured'||e.cadStorageState==='unsafe'?'missing':
+        !e.privateCadApproved?'missing':!e.oemSourceAuthenticityCertified?'review':'configured',
+      e.cadStorageState==='unconfigured'?'Private CAD uploads are disabled: server storage is not configured. Contact the administrator.':
+      e.cadStorageState==='unsafe'?'Private CAD storage failed its safety check. Contact the administrator before uploading.':
       !e.privateCadApproved?`${e.privateCadPending} draft file(s); source-backed CAD awaits engineering approval`:
       e.oemSourceAuthenticityCertified?'CAD approved and verified manufacturer authenticity recorded':
       `${e.privateCadApproved} approved visualization model(s), but OEM authenticity remains unverified`),

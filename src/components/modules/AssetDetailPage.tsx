@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { api } from '@/lib/api';
+import { readMachineParameters } from '@/lib/asset-onboarding';
 import { useAuthStore } from '@/stores/authStore';
 import { useNavigationStore } from '@/stores/navigationStore';
 
@@ -636,8 +637,10 @@ export function AssetDetailPage({ id }: { id: string }) {
 
   let specs: Record<string, unknown> = {};
   try { if (asset.specification) specs = JSON.parse(asset.specification); } catch (_e) { specs = {}; }
-  const specificationEntries = Object.entries(specs).filter(([key]) =>
-    !['uat', 'displaypath', 'display_path'].includes(key.toLowerCase()));
+  const inspectionParameters = readMachineParameters(asset.specification);
+  const specificationEntries = Object.entries(specs ?? {}).filter(([key]) =>
+    !['uat', 'displaypath', 'display_path'].includes(key.toLowerCase()) &&
+    !(key === 'inspectionParameters' && (inspectionParameters.length > 0 || (Array.isArray(specs[key]) && specs[key].length === 0))));
   const statusColors: Record<string, string> = { operational: 'bg-emerald-100 text-emerald-700 border-emerald-200', under_maintenance: 'bg-amber-100 text-amber-700 border-amber-200', standby: 'bg-sky-100 text-sky-700 border-sky-200', decommissioned: 'bg-slate-100 text-slate-600 border-slate-200', disposed: 'bg-red-100 text-red-600 border-red-200' };
   const criticalityColors: Record<string, string> = { low: 'bg-slate-100 text-slate-600 border-slate-200', medium: 'bg-sky-100 text-sky-700 border-sky-200', high: 'bg-amber-100 text-amber-700 border-amber-200', critical: 'bg-red-100 text-red-700 border-red-200' };
   const condColors: Record<string, string> = { new: 'bg-emerald-100 text-emerald-700 border-emerald-200', good: 'bg-emerald-100 text-emerald-700 border-emerald-200', fair: 'bg-amber-100 text-amber-700 border-amber-200', poor: 'bg-red-100 text-red-700 border-red-200', out_of_service: 'bg-red-100 text-red-800 border-red-300' };
@@ -699,6 +702,30 @@ export function AssetDetailPage({ id }: { id: string }) {
                 <Card className="min-w-0 gap-3 border-0 py-4 shadow-sm sm:py-6">
                   <CardHeader className="px-4 pb-0 sm:px-6"><CardTitle className="text-sm">Description</CardTitle></CardHeader>
                   <CardContent className="min-w-0 px-4 sm:px-6"><p className="whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">{asset.description}</p></CardContent>
+                </Card>
+              )}
+              {inspectionParameters.length > 0 && (
+                <Card className="min-w-0 gap-3 border-0 py-4 shadow-sm sm:py-6" data-testid="machine-inspection-overview">
+                  <CardHeader className="px-4 pb-0 sm:px-6">
+                    <CardTitle className="text-sm">Machine inspection parameters</CardTitle>
+                    <CardDescription>Registered inspection methods and limits, not live readings.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="grid min-w-0 gap-3 px-4 sm:px-6 lg:grid-cols-2">
+                    {inspectionParameters.map(parameter => (
+                      <section key={parameter.key} className="min-w-0 rounded-lg border p-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h3 className="min-w-0 break-words text-sm font-semibold">{parameter.name}</h3>
+                          <Badge variant="outline">{parameter.inspectionType === 'visual' ? 'Visual' : 'Instrument'}</Badge>
+                        </div>
+                        <dl className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
+                          <div><dt className="text-xs text-muted-foreground">Unit</dt><dd className="break-words font-medium">{parameter.unit || '—'}</dd></div>
+                          <div><dt className="text-xs text-muted-foreground">Minimum</dt><dd className="font-medium">{parameter.min ?? '—'}</dd></div>
+                          <div><dt className="text-xs text-muted-foreground">Maximum</dt><dd className="font-medium">{parameter.max ?? '—'}</dd></div>
+                        </dl>
+                        {parameter.reference && <p className="mt-3 break-words text-xs text-muted-foreground"><span className="font-medium">Reference:</span> {parameter.reference}</p>}
+                      </section>
+                    ))}
+                  </CardContent>
                 </Card>
               )}
               {specificationEntries.length > 0 && (

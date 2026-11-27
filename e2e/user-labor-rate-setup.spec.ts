@@ -49,6 +49,8 @@ test('isolated administrator configures plant-specific labor rate from user sett
   await expect(dialog.locator('div.border-t').filter({hasText:/– Current/}).getByText('₵'+amount.toFixed(2)+'/hour',{exact:true})).toBeVisible({timeout:30000});
   await expect.poll(()=>dialog.evaluate(el=>Math.max(el.getBoundingClientRect().right-window.innerWidth,-el.getBoundingClientRect().left))).toBeLessThanOrEqual(3);
   await page.screenshot({path:info.outputPath('labor-rate-'+width+'.png')});
+  await dialog.getByRole('button',{name:'Close',exact:true}).click();
+  await expect(dialog).toBeHidden();
  }
  const final=await request.get(url,{headers:scoped});
  expect(final.status()).toBe(200);

@@ -7,14 +7,23 @@ import { apiCallWithPlant, getToken, lookupAssetId, lookupPlantId } from './help
  * All writes are confined to the disposable CI Repairs UAT database.
  * This test never changes a live asset or PM schedule.
  */
-test('UAT-mobile 360px: hierarchy actions align and diagram fits without an empty 560px tree', async ({ page, context }) => {
+test('UAT-mobile 360px: hierarchy actions align and diagram fits without an empty 560px tree', async ({ page, context }, info) => {
   test.setTimeout(90_000);
   await page.setViewportSize({ width: 360, height: 780 });
 
   const plannerToken = await getToken('planner');
-  const assetId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
+  const sourceId = await lookupAssetId(plannerToken, 'UAT-PUMP-001');
   const plantId = await lookupPlantId(plannerToken, 'PLANT-A');
-  const suffix = Date.now().toString().slice(-8);
+  const suffix = Date.now().toString().slice(-8)+'-'+info.retry;
+  const source=await apiCallWithPlant(plannerToken,'GET','/api/assets/'+sourceId,plantId);
+  expect(source.status).toBe(200);
+  const machineName='UAT Mobile Explorer '+suffix;
+  const created=await apiCallWithPlant(plannerToken,'POST','/api/assets',plantId,{
+    name:machineName,assetTag:'UAT-MOBILE-'+suffix,categoryId:source.data.data.categoryId,plantId,
+  });
+  expect(created.status,JSON.stringify(created.data)).toBe(201);
+  const assetId=created.data.data.id as string;
+  expect(assetId).toBeTruthy();
   const assemblyCode = `UAT-MOB-ASM-${suffix}`;
   const partCode = `UAT-MOB-PRT-${suffix}`;
   const assemblyName = 'Mobile Regression Pump and Casing Assembly with Very Long Equipment Description';
@@ -43,7 +52,7 @@ test('UAT-mobile 360px: hierarchy actions align and diagram fits without an empt
   await page.goto('/');
   await page.evaluate((id) => localStorage.setItem('user_plant_id', id), plantId);
   await page.goto(`/#/asset-detail?id=${encodeURIComponent(assetId)}`);
-  await expect(page.getByText('UAT Test Pump').first()).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole('dialog').getByRole('heading',{name:machineName,exact:true})).toBeVisible({ timeout: 30_000 });
 
   await page.getByRole('tab', { name: /Components/i }).click();
   const commission = page.getByRole('button', { name: 'Commission', exact: true });

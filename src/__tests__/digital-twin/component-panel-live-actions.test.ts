@@ -35,7 +35,7 @@ describe('digital twin component panel live maintenance context', () => {
     expect(panel).toContain("params.componentId = mappedComponentId");
     expect(panel).toContain("params.assetId = selectedAssetId");
 
-    expect(maintenance).toContain("if (pageParams?.create === 'true')");
+    expect(maintenance).toContain("if (currentPage === 'create-mr' || pageParams?.create === 'true')");
     expect(maintenance).toContain("if (pageParams.create === 'true')");
     expect(maintenance).toContain('initialAssetId={pageParams?.assetId}');
     expect(maintenance).toContain('initialComponentId={pageParams?.componentId}');

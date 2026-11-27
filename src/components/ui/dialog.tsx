@@ -46,6 +46,14 @@ function DialogOverlay({
   )
 }
 
+function containsDialogTitle(node: React.ReactNode): boolean {
+  return React.Children.toArray(node).some(child => {
+    if (!React.isValidElement(child)) return false;
+    if (child.type === DialogTitle || child.type === DialogPrimitive.Title) return true;
+    return containsDialogTitle((child.props as { children?: React.ReactNode }).children);
+  });
+}
+
 function DialogContent({
   className,
   children,
@@ -66,7 +74,7 @@ function DialogContent({
         )}
         {...props}
       >
-        <DialogTitleFallback />
+        {!containsDialogTitle(children) && <DialogTitleFallback />}
         {children}
         {showCloseButton && (
           <DialogPrimitive.Close
@@ -84,9 +92,9 @@ function DialogContent({
 
 /**
  * Visually hidden fallback DialogTitle injected by DialogContent.
- * When children contain an explicit DialogTitle, it overrides this fallback
- * via the Radix Dialog context (last setTitleId wins), so screen readers
- * announce the real title text. When no explicit title exists, this fallback
+ * Only insert the fallback when there is no explicit title. Both titles
+ * would otherwise use the same Radix ID and obscure the real accessible name.
+ * When no explicit title exists, this fallback
  * prevents the "DialogContent requires a DialogTitle" console warning.
  */
 function DialogTitleFallback() {

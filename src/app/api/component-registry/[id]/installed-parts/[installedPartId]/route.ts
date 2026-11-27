@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { createAuditLog } from '@/lib/audit';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { canAccessPlant, getPlantScope } from '@/lib/plant-scope';
+import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 
 function canManage(session: ReturnType<typeof getSession>) {
   if (!session) return false;
@@ -46,7 +46,7 @@ export async function PATCH(
     if (!existing) return NextResponse.json({ success: false, error: 'Installed spare part not found' }, { status: 404 });
 
     const plantScope = await getPlantScope(request, session);
-    if (!canAccessPlant(plantScope, existing.component.asset?.plantId)) {
+    if (!canAccessPlantStrict(plantScope, existing.component.asset?.plantId)) {
       return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
     }
 

@@ -348,7 +348,7 @@ export function AssetsPage() {
           <SelectContent><SelectItem value="all">All Criticality</SelectItem><SelectItem value="low">Low</SelectItem><SelectItem value="medium">Medium</SelectItem><SelectItem value="high">High</SelectItem><SelectItem value="critical">Critical</SelectItem></SelectContent>
         </Select>
         </div>
-        <div className="flex min-w-0 items-center justify-start gap-2 lg:justify-end" data-testid="assets-machines-filter-subcomponents">
+        <div className="flex h-9 min-w-0 items-center justify-start gap-2 lg:justify-end" data-testid="assets-machines-filter-subcomponents">
           <label className="whitespace-nowrap text-xs text-muted-foreground">Show sub-components</label>
           <Switch checked={showAllAssets} onCheckedChange={setShowAllAssets} />
         </div>

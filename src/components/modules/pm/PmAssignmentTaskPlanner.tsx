@@ -33,47 +33,60 @@ export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId 
   const [internalPickerOpen, setInternalPickerOpen] = useState(false);
   const pickerOpen = controlledPickerOpen ?? internalPickerOpen;
   const setPickerOpen = onPickerOpenChange ?? setInternalPickerOpen;
-  const toolbarRef = useRef<HTMLDivElement>(null);
+  // The dialog can replace its content node when switching between desktop
+  // and mobile. Track the mounted toolbar instead of capturing a stale ref.
+  const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (stage !== 'tasks' || !onToolbarVisibleChange) return;
-    const toolbar = toolbarRef.current;
-    if (!toolbar) return;
+    if (stage !== 'tasks' || !onToolbarVisibleChange || !toolbar) return;
     let frame: number | null = null;
+    let observedScroller: Element | null = null;
+    let observedAction: Element | null = null;
     const checkVisibility = () => {
-      // Measure the actual Add Task button, not the taller descriptive row.
-      // On narrow phones the row may be clipped while its action is still visible.
+      if (!toolbar.isConnected) return;
       const scroller = toolbar.closest('.responsive-dialog-body');
       const action = toolbar.querySelector('[data-testid="pm-original-add-task"]');
+      if (observedScroller !== scroller || observedAction !== action) {
+        observer?.disconnect();
+        observer?.observe(toolbar);
+        if (scroller) observer?.observe(scroller);
+        if (action) observer?.observe(action);
+        observedScroller = scroller;
+        observedAction = action;
+      }
       if (!scroller || !action) {
         onToolbarVisibleChange(false);
         return;
       }
       const button = action.getBoundingClientRect();
       const viewport = scroller.getBoundingClientRect();
-      onToolbarVisibleChange(button.top >= viewport.top && button.bottom <= viewport.bottom);
+      // Fractional CSS pixels during modal animations must not leave a
+      // duplicate sticky action when the original button is fully visible.
+      const tolerance = 1;
+      onToolbarVisibleChange(button.height > 0 && button.width > 0 &&
+        button.top >= viewport.top - tolerance && button.bottom <= viewport.bottom + tolerance);
     };
     const scheduleCheck = () => {
       if (frame !== null) cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => { frame = null; checkVisibility(); });
     };
-    checkVisibility();
-    // Capture scrolling from the currently mounted dialog/sheet. Desktop-to-
-    // mobile remounts may replace the .responsive-dialog-body without changing
-    // this task component's props, so a listener on the old scroller goes stale.
-    document.addEventListener('scroll', checkVisibility, true);
-    window.addEventListener('resize', scheduleCheck);
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(scheduleCheck);
-    observer?.observe(toolbar);
-    const scroller = toolbar.closest('.responsive-dialog-body');
-    if (scroller) observer?.observe(scroller);
+    checkVisibility();
+    // Layout transitions can finish after a viewport resize and scroll event.
+    document.addEventListener('scroll', checkVisibility, true);
+    document.addEventListener('transitionend', scheduleCheck, true);
+    document.addEventListener('animationend', scheduleCheck, true);
+    window.addEventListener('resize', scheduleCheck);
+    scheduleCheck();
     return () => {
       document.removeEventListener('scroll', checkVisibility, true);
+      document.removeEventListener('transitionend', scheduleCheck, true);
+      document.removeEventListener('animationend', scheduleCheck, true);
       window.removeEventListener('resize', scheduleCheck);
       observer?.disconnect();
       if (frame !== null) cancelAnimationFrame(frame);
     };
-  }, [stage, onToolbarVisibleChange]);
+  }, [stage, toolbar, onToolbarVisibleChange]);
   const [meters, setMeters] = useState<PmAssignmentAssetMeterOption[]>([]);
   const [conditions, setConditions] = useState<PmAssignmentConditionSourceOption[]>([]);
   const [sourcesLoading, setSourcesLoading] = useState(false);
@@ -146,7 +159,7 @@ export function PmAssignmentTaskPlanner({ tasks, onChange, assetId, componentId 
 
   return (
     <div data-testid="pm-assignment-task-planner" className="space-y-2">
-      <div ref={toolbarRef} data-testid="pm-assignment-task-toolbar" className="flex flex-col gap-2 rounded-lg border bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
+      <div ref={setToolbar} data-testid="pm-assignment-task-toolbar" className="flex flex-col gap-2 rounded-lg border bg-muted/20 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm font-semibold">{stage === 'tasks' ? '1. Tasks' : '2. Triggers'}</p>
           <p className="text-[11px] text-muted-foreground">{stage === 'tasks' ? 'Choose the Task Library work that belongs to this machine or part. Trigger settings are configured in the next step.' : 'Configure the trigger for every task independently. Each task can use TBM, UBM, CBM or FBM without changing the other tasks on this target.'}</p>

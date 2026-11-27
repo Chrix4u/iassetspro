@@ -186,14 +186,16 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
         // Resolve the *current* toolbar inside the scroll container and scroll
         // synchronously; Playwright's scrollIntoViewIfNeeded can hold a detached
         // element from the previous viewport during this transition.
-        await currentDialog.locator('.responsive-dialog-body').evaluate((scrollArea) => {
-          const currentToolbar = scrollArea.querySelector('[data-testid="pm-assignment-task-toolbar"]');
-          if (!currentToolbar) throw new Error('Current PM assignment task toolbar is missing');
-          const action = currentToolbar.querySelector('[data-testid="pm-original-add-task"]');
-          if (!action) throw new Error('Original PM task library button is missing');
+        await expect.poll(async () => currentDialog.locator('.responsive-dialog-body').evaluate((scrollArea) => {
+          const action = scrollArea.querySelector('[data-testid="pm-original-add-task"]');
+          if (!action) return false;
           action.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
           scrollArea.dispatchEvent(new Event('scroll'));
-        });
+          const button = action.getBoundingClientRect();
+          const viewport = scrollArea.getBoundingClientRect();
+          return button.width > 0 && button.height > 0 &&
+            button.top >= viewport.top - 1 && button.bottom <= viewport.bottom + 1;
+        }), { timeout: 10_000, message: 'Original Add Task action must be inside the mounted dialog viewport' }).toBe(true);
         await expect(toolbar).toBeVisible({ timeout: 10_000 });
         await expect(shortcut).toHaveCount(0);
         const totalBefore = await total.innerText();
@@ -228,14 +230,16 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
         // Resolve the *current* toolbar inside the scroll container and scroll
         // synchronously; Playwright's scrollIntoViewIfNeeded can hold a detached
         // element from the previous viewport during this transition.
-        await currentDialog.locator('.responsive-dialog-body').evaluate((scrollArea) => {
-          const currentToolbar = scrollArea.querySelector('[data-testid="pm-assignment-task-toolbar"]');
-          if (!currentToolbar) throw new Error('Current PM assignment task toolbar is missing');
-          const action = currentToolbar.querySelector('[data-testid="pm-original-add-task"]');
-          if (!action) throw new Error('Original PM task library button is missing');
+        await expect.poll(async () => currentDialog.locator('.responsive-dialog-body').evaluate((scrollArea) => {
+          const action = scrollArea.querySelector('[data-testid="pm-original-add-task"]');
+          if (!action) return false;
           action.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
           scrollArea.dispatchEvent(new Event('scroll'));
-        });
+          const button = action.getBoundingClientRect();
+          const viewport = scrollArea.getBoundingClientRect();
+          return button.width > 0 && button.height > 0 &&
+            button.top >= viewport.top - 1 && button.bottom <= viewport.bottom + 1;
+        }), { timeout: 10_000, message: 'Original Add Task action must be inside the mounted dialog viewport' }).toBe(true);
         await expect(toolbar).toBeVisible({ timeout: 10_000 });
         await expect(shortcut).toHaveCount(0);
       }

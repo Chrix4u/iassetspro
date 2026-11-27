@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { createAuditLog } from '@/lib/audit';
 import { getSession, hasPermission, isAdmin } from '@/lib/auth';
-import { canAccessPlant, getPlantScope } from '@/lib/plant-scope';
+import { canAccessPlantStrict, getPlantScope } from '@/lib/plant-scope';
 
 function canView(session: ReturnType<typeof getSession>) {
   if (!session) return false;
@@ -38,12 +38,19 @@ export async function GET(
     if (!component) return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
 
     const plantScope = await getPlantScope(request, session);
-    if (!canAccessPlant(plantScope, component.asset?.plantId)) {
+    if (!canAccessPlantStrict(plantScope, component.asset?.plantId)) {
       return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
     }
 
     const rows = await db.installedSparePart.findMany({
-      where: { componentId: id },
+      where: { componentId: id, AND: [
+        { OR: [{ inventoryItemId: null }, ...(component.asset?.plantId ? [{ inventoryItem: { plantId: component.asset.plantId } }] : [])] },
+        { OR: [{ workOrderId: null }, ...(component.asset?.plantId ? [{ workOrder: { plantId: component.asset.plantId } }] : [])] },
+        { OR: [{ materialRequestId: null }, ...(component.asset?.plantId ? [{ materialRequest: { AND: [
+          { OR: [{ plantId: component.asset.plantId }, { plantId: null }] },
+          { workOrder: { plantId: component.asset.plantId } },
+        ] } }] : [])] },
+      ] },
       orderBy: [{ status: 'asc' }, { installedAt: 'desc' }],
       include: {
         inventoryItem: { select: { id: true, itemCode: true, name: true, unitOfMeasure: true, currentStock: true } },
@@ -86,7 +93,7 @@ export async function POST(
     } = body;
 
     const parsedQuantity = Number(quantity ?? 1);
-    if (!Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
+    if ((quantity != null && typeof quantity !== 'number' && (typeof quantity !== 'string' || !quantity.trim())) || !Number.isFinite(parsedQuantity) || parsedQuantity <= 0) {
       return NextResponse.json({ success: false, error: 'quantity must be greater than zero' }, { status: 400 });
     }
 
@@ -97,12 +104,13 @@ export async function POST(
     if (!component) return NextResponse.json({ success: false, error: 'Component not found' }, { status: 404 });
 
     const plantScope = await getPlantScope(request, session);
-    if (!canAccessPlant(plantScope, component.asset?.plantId)) {
+    if (!canAccessPlantStrict(plantScope, component.asset?.plantId)) {
       return NextResponse.json({ success: false, error: 'Plant access denied' }, { status: 403 });
     }
 
     let materialRequest: {
       id: string;
+      plantId: string | null;
       workOrderId: string;
       componentRegistryId: string | null;
       itemId: string | null;
@@ -118,6 +126,7 @@ export async function POST(
         where: { id: String(materialRequestId) },
         select: {
           id: true,
+          plantId: true,
           workOrderId: true,
           componentRegistryId: true,
           itemId: true,
@@ -130,6 +139,9 @@ export async function POST(
       });
       if (!materialRequest) {
         return NextResponse.json({ success: false, error: 'Material request not found' }, { status: 404 });
+      }
+      if (!component.asset?.plantId || (materialRequest.plantId && materialRequest.plantId !== component.asset.plantId)) {
+        return NextResponse.json({ success: false, error: 'Material request belongs to a different plant' }, { status: 400 });
       }
       if (!['issued', 'returned', 'closed'].includes(materialRequest.status)) {
         return NextResponse.json({ success: false, error: 'Material must be issued before it can be installed' }, { status: 409 });
@@ -168,13 +180,19 @@ export async function POST(
       }
     }
 
-    let inventoryItem: { id: string; itemCode: string; name: string } | null = null;
+    let inventoryItem: { id: string; itemCode: string; name: string; plantId: string; isActive: boolean } | null = null;
     if (inventoryItemId) {
       inventoryItem = await db.inventoryItem.findUnique({
         where: { id: String(inventoryItemId) },
-        select: { id: true, itemCode: true, name: true },
+        select: { id: true, itemCode: true, name: true, plantId: true, isActive: true },
       });
       if (!inventoryItem) return NextResponse.json({ success: false, error: 'Inventory item not found' }, { status: 404 });
+      if (!component.asset?.plantId || inventoryItem.plantId !== component.asset.plantId) {
+        return NextResponse.json({ success: false, error: 'Inventory item belongs to a different plant' }, { status: 400 });
+      }
+      if (!inventoryItem.isActive && !materialRequest) {
+        return NextResponse.json({ success: false, error: 'Inventory item is inactive' }, { status: 400 });
+      }
       partName = String(partName || inventoryItem.name).trim();
       partCode = String(partCode || inventoryItem.itemCode).trim();
     }
@@ -183,7 +201,7 @@ export async function POST(
     if (!partName) return NextResponse.json({ success: false, error: 'partName is required' }, { status: 400 });
 
     const normalizedSource = materialRequest ? 'material_request' : String(sourceType || 'manual');
-    if (!['material_request', 'commissioning', 'manual'].includes(normalizedSource)) {
+    if (!['material_request', 'commissioning', 'manual'].includes(normalizedSource) || (normalizedSource === 'material_request' && !materialRequest)) {
       return NextResponse.json({ success: false, error: 'Invalid sourceType' }, { status: 400 });
     }
 
@@ -202,8 +220,11 @@ export async function POST(
     }
 
     if (workOrderId) {
-      const workOrder = await db.workOrder.findUnique({ where: { id: String(workOrderId) }, select: { id: true, assetId: true } });
+      const workOrder = await db.workOrder.findUnique({ where: { id: String(workOrderId) }, select: { id: true, assetId: true, plantId: true } });
       if (!workOrder) return NextResponse.json({ success: false, error: 'Work order not found' }, { status: 404 });
+      if (!component.asset?.plantId || workOrder.plantId !== component.asset.plantId) {
+        return NextResponse.json({ success: false, error: 'Work order belongs to a different plant' }, { status: 400 });
+      }
       if (component.assetId && workOrder.assetId && component.assetId !== workOrder.assetId) {
         return NextResponse.json({ success: false, error: 'Work order belongs to a different asset' }, { status: 400 });
       }

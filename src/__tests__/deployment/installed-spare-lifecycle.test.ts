@@ -31,7 +31,7 @@ describe('installed spare lifecycle contract', () => {
     expect(route).toContain('authoritativeQty');
     expect(route).toContain('alreadyTracked');
     expect(route).toContain('getPlantScope(request, session)');
-    expect(route).toContain('canAccessPlant(plantScope, component.asset?.plantId)');
+    expect(route).toContain('canAccessPlantStrict(plantScope, component.asset?.plantId)');
     expect(route).not.toContain('db.inventoryItem.update');
     expect(route).not.toContain('db.inventoryItem.updateMany');
     expect(route).not.toContain('db.stockMovement.create');

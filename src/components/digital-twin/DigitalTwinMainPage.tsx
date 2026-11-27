@@ -1506,6 +1506,7 @@ function ViewerLoader({ assetId, twinId, twinName }: { assetId?: string; twinId:
         assetId={assetId || null}
         twinId={twinId}
         twinName={twinName}
+        dockSceneTree
       />
     </ViewerErrorBoundary>
   );
@@ -1763,21 +1764,21 @@ export function DigitalTwinMainPage() {
       {/* Full-Screen 3D Viewer Mode                                         */}
       {/* ================================================================== */}
       {viewMode === 'viewer' && selectedTwin && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-3">
+        <div className="min-w-0 space-y-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <Button variant="outline" size="sm" onClick={handleBackToGrid}>
               <ArrowLeft className="h-4 w-4 mr-2" />
               Back to Twins
             </Button>
-            <div className="flex-1 min-w-0">
-              <h1 className="text-lg font-semibold truncate">{selectedTwin.name} — 3D Viewer</h1>
+            <div className="order-last w-full min-w-0 sm:order-none sm:w-auto sm:flex-1">
+              <h1 className="break-words text-base font-semibold sm:text-lg">{selectedTwin.name} — 3D Viewer</h1>
             </div>
             <Badge variant="outline" className="text-emerald-600 bg-emerald-50 border-emerald-200">
               <Activity className="h-3 w-3 mr-1" />
               {selectedTwin.healthScore}% Health
             </Badge>
           </div>
-          <div className="relative overflow-hidden" style={{ height: 'calc(100vh - 160px)' }}>
+          <div className="relative min-h-[620px] min-w-0 overflow-hidden rounded-lg" style={{ height: 'max(620px, calc(100dvh - 180px))' }}>
             <ViewerLoader assetId={selectedTwin.asset?.id} twinId={selectedTwin.id} twinName={selectedTwin.name} />
           </div>
         </div>

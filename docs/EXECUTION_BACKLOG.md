@@ -14,7 +14,7 @@ This is the public-safe engineering execution ledger. Do not include customer id
 - [x] Expanded 36-route operational audit (#717).
 - [x] Final 17-route standalone audit (#719).
 - [x] Three contextual detail routes passed on first contextual audit.
-- [ ] Final contextual viewer retest and combined 130-route audit (#722); confirm exact head and main.
+- [x] Final contextual viewer retest and combined 130-route audit (#722); deployed in f938d6c.
 - [ ] Review screenshots at desktop/mobile, including intermediate widths and overflow in filter bars, tables, dialogs and navigation.
 - [ ] Walk through complete isolated onboarding: organization, plant, departments, functional location hierarchy, equipment position, asset category and registration, assigned users.
 - [ ] Verify primary and non-primary location assignment and historical snapshots; no implicit promotion.
@@ -59,9 +59,7 @@ This is the public-safe engineering execution ledger. Do not include customer id
 - [ ] Native/mobile/desktop packaging only where separately specified and applicable; do not claim a browser audit verifies native clients.
 
 ## Current checkpoint
-- Latest verified deployed release: b8105fab33dc (deployment run 45921259125).
-- Main b5a6129d contains final standalone navigation audit, combined CI pending at checkpoint.
-- Contextual audit #722 head 255cb380: final viewer empty-scene assertion corrected; full CI pending.
-- Installed part integrity #723 head a25d8194: implementation and ten regression tests committed, CI pending.
-- Next: verify those exact heads; resolve any failures; merge and deploy through required gates. Continue integrated workflow acceptance independently.
-- External acceptance gates: authorized equipment evidence, genuine OEM geometry rights and validation, controlled reference data, isolated staging and verified recovery. Do not mark these complete without evidence.
+- Verified live build 9ab5eb09; deployment 46027449260 passed. Installed part integrity #723 merged and deployed.
+- Standalone viewer responsive correction #726 passed 46025805370 and merged as 237dd10a; combined deployment pending.
+- Consolidated final acceptance branch #725 includes #727 labor configuration and #728 readable inspection parameters. Previous artifacts confirmed those views rendered; corrected test selectors and dialog close behavior. Replaced failed test-only DB import with real administrator rate API in the integrated PM workflow.
+- Next: exact-head combined CI, fix failures only, merge, deploy, verify live health, then isolated owner demonstration. Do not claim full physical acceptance or OEM provenance without authorized evidence.

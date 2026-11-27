@@ -330,6 +330,18 @@ test('isolated demonstration: fresh machine, 5500 yards, task-level PM generatio
     return user.id as string;
   };
   const [technicianId,supervisorId]=await Promise.all([userId(technician),userId(supervisor)]);
+  // The general platform fixture does not seed labor rates (unlike Repairs UAT).
+  // Seed a synthetic, plant-specific rate only after the isolated CI guard above.
+  // Never bypass the production closure costing gate or modify live rates.
+  const database=new URL(process.env.DATABASE_URL!);
+  expect(database.hostname).toBe('127.0.0.1');
+  expect(database.pathname).toBe('/platform_e2e');
+  const {db}=await import('../src/lib/db');
+  const effectiveFrom=new Date('2024-01-01T00:00:00.000Z');
+  const rate=await db.laborRate.findFirst({where:{userId:technicianId,plantId,effectiveFrom}});
+  if(!rate)await db.laborRate.create({data:{userId:technicianId,plantId,normalHourlyRate:50,
+    overtimeHourlyRate:75,effectiveFrom,currency:'GHS'}});
+  else expect(rate.normalHourlyRate).toBe(50);
   const workOrder=await getWO(plannerToken,woId);
   expect(workOrder.type).toBe('preventive');
   expect(workOrder.pmSchedule?.id??workOrder.pmScheduleId).toBe(scheduleId);
@@ -356,7 +368,12 @@ test('isolated demonstration: fresh machine, 5500 yards, task-level PM generatio
   expect((await getWO(plannerToken,woId)).status).toBe('verified');
   expect(await getThreshold()).toMatchObject({nextDueReading:5000});
   await closeWO(plannerToken,woId);
-  expect((await getWO(plannerToken,woId)).status).toBe('closed');
+  const closed=await getWO(plannerToken,woId);
+  expect(closed.status).toBe('closed');
+  expect(Number(closed.actualHours)).toBeGreaterThanOrEqual(0.5);
+  expect(Number(closed.laborCost)).toBeCloseTo(Number(closed.actualHours)*50,2);
+  expect(Number(closed.totalCost)).toBeGreaterThanOrEqual(25);
+  expect(closed.laborCurrency).toBe('GHS');
   expect(await getThreshold()).toMatchObject({state:'upcoming',currentValue:5500,nextDueReading:10500,remaining:5000});
   expect(await evaluate()).toHaveLength(0);
   expect((await getMeters()).find(m=>m.id===output!.id)?.currentValue).toBe(5500);

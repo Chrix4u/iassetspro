@@ -1,0 +1,63 @@
+import {test,expect} from '@playwright/test';
+test('isolated administrator configures plant-specific labor rate from user settings without rewriting history',async({page,context,request},info)=>{
+ test.setTimeout(120000);
+ if(process.env.CI!=='true'||process.env.PLAYWRIGHT_BASE_URL!=='http://127.0.0.1:3000'||!process.env.DATABASE_URL?.includes('/platform_e2e?')){
+  if(process.env.CI)throw new Error('Labor rate audit requires isolated platform CI');
+  test.skip(true,'Only isolated platform CI');
+ }
+ const login=await request.post('/api/auth/login',{data:{username:'admin',password:'admin123'}});
+ expect(login.status()).toBe(200);
+ const token=(await login.json()).data.token;
+ const headers={Authorization:'Bearer '+token};
+ const users=await request.get('/api/users?search=tech_util1',{headers});
+ expect(users.status()).toBe(200);
+ const worker=(await users.json()).data.find((u:{username:string})=>u.username==='tech_util1');
+ expect(worker?.id).toBeTruthy();
+ const url='/api/users/'+worker.id+'/labor-rates';
+ const initial=await request.get(url,{headers});
+ expect(initial.status()).toBe(200);
+ const plantId=(await initial.json()).data.plants[0]?.id;
+ expect(plantId).toBeTruthy();
+ const scoped={...headers,'X-Plant-ID':plantId};
+ const ordinary=await request.post('/api/auth/login',{data:{username:'operator1',password:'password123'}});
+ expect(ordinary.status()).toBe(200);
+ const ordinaryHeaders={Authorization:'Bearer '+(await ordinary.json()).data.token};
+ expect((await request.get(url,{headers:ordinaryHeaders})).status()).toBe(403);
+ expect((await request.post(url,{headers:ordinaryHeaders,data:{plantId,normalHourlyRate:41}})).status()).toBe(403);
+ expect((await request.post(url,{headers:scoped,data:{plantId:'foreign-plant',normalHourlyRate:41}})).status()).toBe(403);
+ expect((await request.post(url,{headers:scoped,data:{plantId,normalHourlyRate:-1}})).status()).toBe(400);
+ const start=await request.post(url,{headers:scoped,data:{plantId,normalHourlyRate:41}});
+ expect([200,201]).toContain(start.status());
+ const baseline=(await start.json()).data;
+ const replay=await request.post(url,{headers:scoped,data:{plantId,normalHourlyRate:41}});
+ expect(replay.status()).toBe(200);
+ expect((await replay.json()).data.id).toBe(baseline.id);
+ await context.addInitScript(({token,plantId})=>{localStorage.setItem('eam_token',token);localStorage.setItem('user_plant_id',plantId);},{token,plantId});
+ for(const [width,height,amount] of [[1440,900,42.5],[390,844,43.5]]){
+  await page.setViewportSize({width,height});
+  await page.goto('/#/settings-users');
+  await page.reload();
+  await page.getByPlaceholder('Search users...').fill(worker.fullName);
+  const row=page.getByRole('row').filter({hasText:worker.fullName});
+  await expect(row).toHaveCount(1);
+  await row.getByRole('button').click();
+  await page.getByRole('menuitem',{name:'Labor rates'}).click();
+  const dialog=page.getByRole('dialog',{name:'Labor rates'});
+  await expect(dialog.getByRole('spinbutton',{name:'Normal hourly rate (₵)'})).toBeVisible();
+  await dialog.getByRole('spinbutton',{name:'Normal hourly rate (₵)'}).fill(String(amount));
+  await dialog.getByRole('button',{name:'Save rate'}).click();
+  await expect(dialog.getByText('₵'+amount.toFixed(2)+'/hour',{exact:true})).toBeVisible();
+  await expect.poll(()=>dialog.evaluate(el=>Math.max(el.getBoundingClientRect().right-window.innerWidth,-el.getBoundingClientRect().left))).toBeLessThanOrEqual(3);
+  await page.screenshot({path:info.outputPath('labor-rate-'+width+'.png')});
+  await dialog.getByRole('button',{name:'Close',exact:true}).last().click();
+  await expect(dialog).toHaveCount(0);
+ }
+ const final=await request.get(url,{headers:scoped});
+ expect(final.status()).toBe(200);
+ const rates=(await final.json()).data.rates.filter((r:{plantId:string})=>r.plantId===plantId);
+ expect(rates[0]).toMatchObject({normalHourlyRate:43.5,currency:'GHS',effectiveTo:null});
+ const old=rates.find((r:{id:string})=>r.id===baseline.id);
+ expect(old.normalHourlyRate).toBe(41);
+ expect(old.effectiveTo).toBeTruthy();
+ expect(new Date(old.effectiveTo).getTime()).toBeLessThan(new Date(rates[0].effectiveFrom).getTime());
+});

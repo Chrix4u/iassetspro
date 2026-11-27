@@ -29,6 +29,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import { ResponsiveDialog } from '@/components/shared/ResponsiveDialog';
+import { UserLaborRateDialog } from '@/components/modules/UserLaborRateDialog';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -71,6 +72,7 @@ export function SettingsUsersPage() {
   const [viewUser, setViewUser] = useState<User | null>(null);
   const [viewOpen, setViewOpen] = useState(false);
   const [resetPwd, setResetPwd] = useState('');
+  const [rateUser,setRateUser]=useState<User|null>(null);
 
   const emptyForm = { fullName: '', username: '', email: '', phone: '', staffId: '', department: '', password: '', status: 'active' as string, roleIds: [] as string[] };
   const [createForm, setCreateForm] = useState(emptyForm);
@@ -194,6 +196,7 @@ export function SettingsUsersPage() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => { setSelectedUser(u); setViewUser(u); setViewOpen(true); }}><Eye className="h-3.5 w-3.5 mr-2" />View</DropdownMenuItem>
                         {(hasPermission('users.update') || isAdmin()) && <DropdownMenuItem onClick={() => openEdit(u)}><Pencil className="h-3.5 w-3.5 mr-2" />Edit</DropdownMenuItem>}
+                        {isAdmin() && <DropdownMenuItem onClick={()=>setRateUser(u)}><Clock className="h-3.5 w-3.5 mr-2"/>Labor rates</DropdownMenuItem>}
                         <DropdownMenuItem onClick={() => { setSelectedUser(u); setResetPwd(''); setResetOpen(true); }}><Key className="h-3.5 w-3.5 mr-2" />Reset Password</DropdownMenuItem>
                         {(hasPermission('users.update') || isAdmin()) && <DropdownMenuItem onClick={() => toggleStatus(u)}>{u.status === 'active' ? <UserPlus className="h-3.5 w-3.5 mr-2" /> : <UserMinus className="h-3.5 w-3.5 mr-2" />}{u.status === 'active' ? 'Deactivate' : 'Activate'}</DropdownMenuItem>}
                       </DropdownMenuContent>
@@ -206,6 +209,7 @@ export function SettingsUsersPage() {
         </div>
       </Card>
 
+      {rateUser&&<UserLaborRateDialog key={rateUser.id} user={rateUser} onClose={()=>setRateUser(null)}/>}
       {/* Create Dialog */}
       <ResponsiveDialog open={createOpen} onOpenChange={setCreateOpen}>
         

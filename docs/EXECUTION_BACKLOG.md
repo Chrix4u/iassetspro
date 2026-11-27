@@ -73,10 +73,16 @@ This is the public-safe engineering execution ledger. Do not include customer id
 - [x] Confirm current production source is reachable on GitHub main and exact-head CI/deploy succeeded (46064052137 / 46067118747).
 - [x] Confirm public application and health endpoint respond successfully; database and cache health pass.
 - [x] Confirm production release retention has active and immediate rollback only; checksum and deployment lock already exist.
-- [ ] Rehearse checksum-verified recovery of the current active and rollback artifacts; publish durable GitHub Releases where supported.
+- [x] Rehearse checksum-verified recovery of the current active and rollback artifacts (CI 46064052137 and 46052647826): both downloads passed SHA-256 and embedded source SHA checks.
+- [ ] Publish durable, reviewed GitHub Release assets where supported; verify recovery after retention expiry.
 - [ ] Complete full source checkout inventory, including nested and detached worktrees; compare local heads and edits against authoritative GitHub refs, inspect stashes, local branches, ignored data and service references.
-- [ ] Preserve only reviewed legitimate changes through approved GitHub refs; never publish secrets or confidential operational data to this public repository. Keep restricted evidence separately.
-- [ ] Remove entire verified obsolete checkouts with Git worktree metadata pruning; hold only specific unrecoverable or service-referenced paths and record the reason privately.
+- [x] Preserve two reviewed local-only source trees on separate archival branches, verify fetched tree identities, and keep production unchanged. Archive commits 41a91957584eefe4bec34007d6c5eb1c8053d17f and 334f18ff50d8391af423c19759a1b9c00e452b86.
+- [ ] Preserve remaining reviewed legitimate changes through approved GitHub refs; never publish secrets or confidential operational data to this public repository. Keep restricted evidence separately.
+- [x] Remove eight verified obsolete linked worktrees in guarded batches, with Git worktree metadata pruning and successful application health checks after each removal.
+- [ ] Continue full-directory removal for remaining candidates; resolve local-only history, local edits, stashes, orphan metadata, ignored persistent data and service references before deletion.
 - [ ] Harden release retention with service-reference checks, verified recovery receipts and cleanup audit logging under the existing deployment lock.
-- [ ] Verify authentication, admin, worker/cron, integrations, backup restoration readiness, and application health after cleanup; record measured filesystem delta separately from allocated directory bytes.
+- [x] Final read-only public health and database/cache checks passed; anonymous protected API access denied; runtime online and backup service last executions successful. Both release packages are recoverable.
+- [ ] Verify authenticated administrator and role flows, worker job completion, integrations, and off-server backup restoration readiness; keep storage measurement and detailed cleanup logs in restricted operations evidence.
 - [ ] Do not declare consolidation complete until all above gates pass. Do not initiate unnecessary deployment for documentation-only updates.
+
+Storage checkpoint: partial consolidation only. Continue source-by-source preservation and whole-directory cleanup before declaring runtime-only hosting complete. Current successful production release remains unchanged. Do not merge archive branches automatically.

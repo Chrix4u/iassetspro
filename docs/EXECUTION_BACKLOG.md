@@ -68,3 +68,15 @@ This is the public-safe engineering execution ledger. Do not include customer id
 - Photo provenance and same-machine hotspot integrity #735 forward-ports tested draft changes; full CI required. Draft #669 physical authenticity, independently approved actual-machine geometry, external backup restore and witnessed acceptance remain separate gates.
 - #727 and #729 superseded by consolidated #725 and reconciled #730 respectively; do not merge stale duplicates.
 - Next: merge only exact-head passing checks, deploy combined main, verify health and CAD readiness; execute remaining isolated UI commissioning and report parity, followed by witnessed site acceptance. Never certify physical machine or OEM source from synthetic fixtures.
+
+## P0 — GitHub-first storage consolidation (2026-11-27)
+- [x] Confirm current production source is reachable on GitHub main and exact-head CI/deploy succeeded (46064052137 / 46067118747).
+- [x] Confirm public application and health endpoint respond successfully; database and cache health pass.
+- [x] Confirm production release retention has active and immediate rollback only; checksum and deployment lock already exist.
+- [ ] Rehearse checksum-verified recovery of the current active and rollback artifacts; publish durable GitHub Releases where supported.
+- [ ] Complete full source checkout inventory, including nested and detached worktrees; compare local heads and edits against authoritative GitHub refs, inspect stashes, local branches, ignored data and service references.
+- [ ] Preserve only reviewed legitimate changes through approved GitHub refs; never publish secrets or confidential operational data to this public repository. Keep restricted evidence separately.
+- [ ] Remove entire verified obsolete checkouts with Git worktree metadata pruning; hold only specific unrecoverable or service-referenced paths and record the reason privately.
+- [ ] Harden release retention with service-reference checks, verified recovery receipts and cleanup audit logging under the existing deployment lock.
+- [ ] Verify authentication, admin, worker/cron, integrations, backup restoration readiness, and application health after cleanup; record measured filesystem delta separately from allocated directory bytes.
+- [ ] Do not declare consolidation complete until all above gates pass. Do not initiate unnecessary deployment for documentation-only updates.

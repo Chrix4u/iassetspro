@@ -140,7 +140,7 @@ export const PAGE_PERMISSIONS: Record<string, string[]> = {
   'settings-security': ['system_settings.view'],
   'settings-health': ['system_settings.view'],
   'settings-queues': ['system_settings.view'],
-  'settings-preferences': ['system_settings.view'],
+  'settings-preferences': ['dashboard.view'], // Personal preferences are self-scoped, not administrative settings.
   'settings-gtp-migration': ['system_settings.view'],
   // Observability & Historian (admin-only)
   'observability-dashboard': ['system_settings.view'],

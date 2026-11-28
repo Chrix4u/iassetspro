@@ -29,14 +29,16 @@ This is the public-safe engineering execution ledger. Do not include customer id
 - [ ] Shift definitions including overnight, crew and team leader, planner targets and published plans.
 - [ ] Restrict operator entry to assigned shift/asset and authorized time; validate target inheritance, units, delays, stoppages, defects and meter readings.
 - [ ] Verify independent approval, repeat submission/idempotency, meter integration, correction audit and unauthorized role rejection.
-- [ ] Compare production formulas and period aggregation to controlled workbook fixtures; daily, weekly, monthly, quarterly, yearly and custom interval exports; distinguish units and missing values.
+- [x] Compare production formula and period aggregation to controlled repository workbook mapping (#739, CI 46136357384); daily, Sunday-start weekly, monthly, quarterly, yearly, custom intervals, mixed units and unreported vs approved-zero shifts passed. Original external workbook and export parity remain separate acceptance tasks.
+- [ ] Confirm original owner workbook and exported figures against witnessed input.
 - [x] Integrated isolated production meter → PM due → work-order closure → 10,500-yard recurrence regression (#725, CI 46033149251); merged.
 - [ ] Complete owner-guided commissioning demonstration from fresh asset registration through production, PM and repairs.
 
 ## P0 — Preventive maintenance
 - [ ] Task library, templates, part-specific assignments, calendar and usage frequencies only.
 - [ ] Validate zero baselines, meter monotonicity, calendar recurrence, next due, scheduler idempotency and duplicate prevention.
-- [ ] Inspection list filters, sight/instrument technique, parameter bounds and captured evidence.
+- [x] PM inspection filter layout and synthetic planner-to-A4 portrait worksheet (#736, #738 CI 46136160210); all 44 Repairs UAT cases passed, PDF attached.
+- [ ] Verify sight/instrument technique, actual parameter bounds and physical evidence with engineer.
 - [ ] Failed inspections generate linked corrective work; verify authorization and lifecycle handoff.
 - [ ] Planner scheduling/assignment, supervisor verification, technician evidence, completion and next-due reset only at authorized closure.
 - [ ] Confirm PM reports, compliance, overdue, backlog and exports against controlled reference cases.
@@ -66,4 +68,6 @@ This is the public-safe engineering execution ledger. Do not include customer id
 - #731–733 actual isolated browser reports verified multilevel factory onboarding, independent location history and frozen maintenance location snapshots. Deployed CI 46052647826 platform reports: 220 passes, zero failures/flaky, 46 skips. Some older suites catch errors and skip; do not count those as coverage.
 - #734 commissioning preflight and #735 private photo provenance/hotspot integrity merged and deployed. CAD storage preflight passes; private synthetic photo/scan acceptance passed. Genuine OEM geometry, actual machine evidence and off-server recovery remain separate gates.
 - #736 PM and asset filter corrections merged; both responsive filter scenarios passed, but sticky shortcut scenario passed only on retry in CI 46066271910. This change reserves the shortcut footprint and checks the scroll viewport remains stable across visibility transitions on desktop/mobile. Exact-head CI required before merge.
-- Next: complete remaining strict isolated acceptance cases, including engineer portrait print, production workbook formula/period parity, role-based commissioning and legacy skip reconciliation; then witnessed physical acceptance. Never certify actual machine geometry or provenance from synthetic fixtures.
+- #737–739 merged and deployed as 815aacb4; combined CI 46138113796 and Deploy 46139776676 succeeded, live health verified. Main platform actual reports: 220 passes, 47 skips, no unexpected/flaky failures. The individual #738 Repairs UAT report had 44/44 first-pass; #739 period regression passed.
+- #740 first exact-head CI 46140636752: 34 rewritten authentication, assets, dashboard and navigation tests passed first attempt; platform total 244 passed, 23 skips. Extended #740 replaces all eleven legacy suites with strict assertions and an isolated-fixture guard, adds viewer self-preferences access without administrative permissions, and corrects saved day-first date formatting. Latest head requires fresh CI and real report review before merge. Do not count intentional local-only/physical exclusions as passed.
+- Next: resolve any strict-suite failures, verify combined main and deployment, complete additional isolated cross-module commissioning, and obtain genuine OEM/field evidence and witnessed owner/engineer acceptance. Never certify physical geometry or provenance using synthetic fixtures.

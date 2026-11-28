@@ -197,8 +197,10 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
             button.top >= viewport.top - 1 && button.bottom <= viewport.bottom + 1;
         }), { timeout: 10_000, message: 'Original Add Task action must be inside the mounted dialog viewport' }).toBe(true);
         await expect(toolbar).toBeVisible({ timeout: 10_000 });
-        await expect(shortcut).toHaveCount(0);
+        await expect(shortcut).toBeHidden();
         const totalBefore = await total.innerText();
+        const body = currentDialog.locator('.responsive-dialog-body');
+        const headerLayout = await body.evaluate(node => ({ height: node.clientHeight, width: node.clientWidth }));
 
         const scrollStatus = await currentDialog.locator('.responsive-dialog-body').evaluate((scrollArea) => {
           scrollArea.scrollTop = scrollArea.scrollHeight;
@@ -216,6 +218,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
         expect(scrollStatus.toolbarVisible, 'Toolbar must scroll out of view: ' + JSON.stringify(scrollStatus)).toBe(false);
         await expect(shortcut).toBeVisible();
         await expect(shortcut).toBeEnabled();
+        await expect.poll(() => body.evaluate(node => ({ height: node.clientHeight, width: node.clientWidth })), { message: 'Showing the header shortcut must not resize the scroll viewport' }).toEqual(headerLayout);
         await shortcut.click();
 
         const taskPicker = page.getByRole('dialog').filter({
@@ -241,7 +244,7 @@ test.describe.serial('Frontend hierarchy commissioning + component PM', () => {
             button.top >= viewport.top - 1 && button.bottom <= viewport.bottom + 1;
         }), { timeout: 10_000, message: 'Original Add Task action must be inside the mounted dialog viewport' }).toBe(true);
         await expect(toolbar).toBeVisible({ timeout: 10_000 });
-        await expect(shortcut).toHaveCount(0);
+        await expect(shortcut).toBeHidden();
       }
       await page.setViewportSize({ width: 1280, height: 800 });
 

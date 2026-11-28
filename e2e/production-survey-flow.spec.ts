@@ -112,9 +112,7 @@ test('isolated UAT: planner standards, operator entry, independent approval and 
   expect(pmSchedule.status()).toBe(201);
   // An assigned operator cannot submit a shift before its scheduled end.
   // Use tomorrow, independent of the CI runner's execution time.
-  // Reserve a distinct future date within the 31-day readiness window.
-  // The earlier scenario already reserves tomorrow for this operator.
-  const futurePlan={...plan,productionDate:new Date(Date.now()+(10+testInfo.retry)*86400000).toISOString().slice(0,10)};
+  const futurePlan={...plan,productionDate:new Date(Date.now()+86400000).toISOString().slice(0,10)};
   const futureSchedule=await request.post('/api/production-surveys/plans',{
     headers:manager,data:futurePlan,
   });
@@ -289,7 +287,9 @@ test('isolated demonstration: fresh machine, 5500 yards, task-level PM generatio
     standardUtilizationPct:85,standardSpeed:15};
   const published=await request.post('/api/production-surveys/plans',{headers:manager,data:plan});
   expect(published.status(),await published.text()).toBe(200);
-  const futurePlan={...plan,productionDate:new Date(Date.now()+86400000).toISOString().slice(0,10)};
+  // Reserve a distinct future date within the 31-day readiness window.
+  // The earlier scenario already reserves tomorrow for this operator.
+  const futurePlan={...plan,productionDate:new Date(Date.now()+(10+testInfo.retry)*86400000).toISOString().slice(0,10)};
   const futurePublished=await request.post('/api/production-surveys/plans',{headers:manager,data:futurePlan});
   expect(futurePublished.status(),await futurePublished.text()).toBe(200);
   const pmTask=await request.post('/api/pm-tasks',{headers:{...planner,'X-Plant-ID':plantId},data:{

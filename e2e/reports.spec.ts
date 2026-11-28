@@ -1,270 +1,91 @@
 import { test, expect, type Page } from '@playwright/test';
-
-// ─── Demo credentials ──────────────────────────────────────────────────────
-const ADMIN_CREDENTIALS = { username: 'admin', password: 'admin123' };
-
-// ─── Helper: login and navigate to a specific page ─────────────────────────
-async function loginAndNavigateTo(page: Page, hashPath: string): Promise<boolean> {
-  try {
-    await page.goto('/');
-    await page.waitForSelector('input[placeholder="Enter your username"]', { timeout: 10_000 });
-    await page.fill('input[placeholder="Enter your username"]', ADMIN_CREDENTIALS.username);
-    await page.fill('input[placeholder="Enter your password"]', ADMIN_CREDENTIALS.password);
-    await page.click('button[type="submit"]');
-
-    // Wait for dashboard
-    await page.waitForURL(/#\/dashboard/, { timeout: 15_000 });
-    await page.waitForTimeout(2000);
-
-    // Navigate to the target page
-    await page.goto(`/${hashPath}`);
-    await page.waitForTimeout(3000);
-
-    return true;
-  } catch {
-    return false;
-  }
+import { readFile } from 'node:fs/promises';
+import { signIn, openPage } from './helpers/strict-platform';
+async function maintenance(page:Page){
+ const main=await openPage(page,'reports-maintenance','Maintenance Reports');
+ await expect(main.getByText('Total Work Orders',{exact:true})).toBeVisible({timeout:25_000});
+ return main;
 }
-
-test.describe('Reports & Analytics', () => {
-  test.beforeEach(async ({ page }) => {
-    const ready = await loginAndNavigateTo(page, '#/reports');
-    if (!ready) {
-      test.skip();
-    }
-  });
-
-  test('reports page loads successfully', async ({ page }) => {
-    const bodyText = await page.textContent('body');
-    const hasReportsContent =
-      bodyText?.includes('Report') ||
-      bodyText?.includes('Analytics') ||
-      bodyText?.includes('Dashboard') ||
-      page.url().includes('#/reports');
-
-    expect(hasReportsContent).toBeTruthy();
-  });
-
-  test('report cards or sections are visible', async ({ page }) => {
-    try {
-      const bodyText = await page.textContent('body');
-
-      const hasReportSections =
-        bodyText?.includes('Work Order') ||
-        bodyText?.includes('Asset') ||
-        bodyText?.includes('Maintenance') ||
-        bodyText?.includes('Summary') ||
-        bodyText?.includes('Overview');
-
-      // Also look for card elements
-      const cards = page.locator('[class*="card"], [class*="rounded"][class*="border"]');
-      const cardCount = await cards.count();
-
-      expect(hasReportSections || cardCount > 0).toBeTruthy();
-    } catch {
-      test.skip();
-    }
-  });
-
-  test('KPI summary indicators are present', async ({ page }) => {
-    try {
-      const bodyText = await page.textContent('body');
-
-      const hasKpis =
-        bodyText?.includes('Total') ||
-        bodyText?.includes('Completion') ||
-        bodyText?.includes('Pending') ||
-        bodyText?.includes('Open') ||
-        bodyText?.includes('Closed') ||
-        bodyText?.includes('Percentage') ||
-        bodyText?.includes('Rate');
-
-      expect(hasKpis).toBeTruthy();
-    } catch {
-      test.skip();
-    }
-  });
-
-  test('charts or data visualizations are rendered', async ({ page }) => {
-    try {
-      // Look for chart containers (SVG, canvas, or chart wrapper elements)
-      const svgChart = page.locator('svg.recharts-surface, [class*="chart"], [class*="Chart"], canvas');
-      const chartCount = await svgChart.count();
-
-      if (chartCount > 0) {
-        expect(chartCount).toBeGreaterThan(0);
-      } else {
-        // Check for data tables as alternative
-        const table = page.locator('table, [class*="table"]').first();
-        const tableVisible = await table.isVisible().catch(() => false);
-        expect(tableVisible || chartCount > 0).toBeTruthy();
-      }
-    } catch {
-      test.skip();
-    }
-  });
-
-  test('export or download buttons are available', async ({ page }) => {
-    try {
-      const exportButton = page.locator('button').filter({
-        hasText: /Export|Download|PDF|CSV|Print/i,
-      }).first();
-
-      if (await exportButton.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        expect(true).toBeTruthy();
-      } else {
-        test.skip();
-      }
-    } catch {
-      test.skip();
-    }
-  });
+test.describe('Reports & Analytics',()=>{
+ test.beforeEach(async({page,request})=>{await page.setViewportSize({width:1440,height:900});await signIn(page,request);});
+ test('reports page loads successfully',async({page})=>{await openPage(page,'reports-asset','Asset Reports');});
+ test('report cards or sections are visible',async({page})=>{
+   const main=await openPage(page,'reports-asset','Asset Reports');
+   for(const title of ['Total Assets','Critical Assets','Active Assets'])await expect(main.getByText(title,{exact:true})).toBeVisible();
+ });
+ test('KPI summary indicators are present',async({page})=>{
+   const main=await maintenance(page);
+   await expect(main.getByText('Completion Rate',{exact:true}).first()).toBeVisible();
+   await expect(main.getByText('Avg Completion Time',{exact:true})).toBeVisible();
+ });
+ test('charts or data visualizations are rendered',async({page,request})=>{
+   await maintenance(page);
+   await page.getByRole('tab',{name:'Overview',exact:true}).click();
+   await expect(page.getByText('Work Orders by Type',{exact:true})).toBeVisible();
+   await expect(page.getByText('Work Orders by Priority',{exact:true})).toBeVisible();
+   await expect(page.getByText('Monthly WO Trend',{exact:true})).toBeVisible();
+   // A chart is required when the backend has report data; the real empty-state
+   // message is valid for a date range that contains no work orders.
+   const panel=page.getByRole('tabpanel',{name:'Overview'});
+   await expect(panel.locator('.recharts-wrapper').first().or(panel.getByText('No type data',{exact:true}))).toBeVisible();
+ });
+ test('export or download buttons are available',async({page})=>{
+   await maintenance(page);
+   await expect(page.getByRole('button',{name:'Excel',exact:true}).first()).toBeEnabled();
+   await expect(page.getByRole('button',{name:'PDF',exact:true}).first()).toBeEnabled();
+ });
 });
-
-test.describe('Reports - Maintenance Reports', () => {
-  test.beforeEach(async ({ page }) => {
-    const ready = await loginAndNavigateTo(page, '#/reports-maintenance');
-    if (!ready) {
-      test.skip();
-    }
-  });
-
-  test('maintenance reports page loads successfully', async ({ page }) => {
-    const bodyText = await page.textContent('body');
-    const hasMaintenanceReports =
-      bodyText?.includes('Maintenance') ||
-      bodyText?.includes('Report') ||
-      bodyText?.includes('Work Order') ||
-      page.url().includes('#/reports-maintenance');
-
-    expect(hasMaintenanceReports).toBeTruthy();
-  });
-
-  test('date range picker or filter controls are present', async ({ page }) => {
-    try {
-      const bodyText = await page.textContent('body');
-
-      // Check for date range related UI elements
-      const hasDateControls =
-        bodyText?.includes('Date') ||
-        bodyText?.includes('From') ||
-        bodyText?.includes('To') ||
-        bodyText?.includes('Range') ||
-        bodyText?.includes('Period');
-
-      // Look for date input elements
-      const dateInputs = page.locator('input[type="date"], input[type="datetime-local"], input[placeholder*="Date"], input[placeholder*="date"]');
-      const dateInputCount = await dateInputs.count();
-
-      // Look for date picker buttons
-      const dateButtons = page.locator('button').filter({
-        hasText: /Date|Range|Period|Last \d+|Today|This Week|This Month/i,
-      });
-      const dateButtonCount = await dateButtons.count();
-
-      expect(hasDateControls || dateInputCount > 0 || dateButtonCount > 0).toBeTruthy();
-    } catch {
-      test.skip();
-    }
-  });
-
-  test('can interact with date range controls', async ({ page }) => {
-    try {
-      // Try clicking a date range button (e.g., "Last 30 Days", "Today", etc.)
-      const dateButton = page.locator('button').filter({
-        hasText: /Last \d+|Today|This Week|This Month|Last Year/i,
-      }).first();
-
-      if (await dateButton.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await dateButton.click();
-        await page.waitForTimeout(1000);
-        expect(true).toBeTruthy();
-      } else {
-        // Try date input
-        const dateInput = page.locator('input[type="date"], input[type="datetime-local"]').first();
-        if (await dateInput.isVisible({ timeout: 3_000 }).catch(() => false)) {
-          await dateInput.fill('2024-01-01');
-          await page.waitForTimeout(500);
-          expect(true).toBeTruthy();
-        } else {
-          test.skip();
-        }
-      }
-    } catch {
-      test.skip();
-    }
-  });
-
-  test('generate report button is present', async ({ page }) => {
-    try {
-      const generateButton = page.locator('button').filter({
-        hasText: /Generate|Run|Apply|Refresh|Update/i,
-      }).first();
-
-      if (await generateButton.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        expect(true).toBeTruthy();
-      } else {
-        test.skip();
-      }
-    } catch {
-      test.skip();
-    }
-  });
-
-  test('maintenance KPI cards are displayed', async ({ page }) => {
-    try {
-      const bodyText = await page.textContent('body');
-
-      const hasMaintenanceKpis =
-        bodyText?.includes('Total WO') ||
-        bodyText?.includes('Work Order') ||
-        bodyText?.includes('Completion Rate') ||
-        bodyText?.includes('Avg') ||
-        bodyText?.includes('Average') ||
-        bodyText?.includes('Cost') ||
-        bodyText?.includes('Overdue') ||
-        bodyText?.includes('SLA');
-
-      expect(hasMaintenanceKpis).toBeTruthy();
-    } catch {
-      test.skip();
-    }
-  });
-
-  test('report tabs or sections are available', async ({ page }) => {
-    try {
-      // Look for tab navigation in reports
-      const tabs = page.locator('[role="tab"], button[class*="tab"], [class*="tablist"]');
-      const tabCount = await tabs.count();
-
-      if (tabCount > 0) {
-        // Try clicking a tab
-        await tabs.first().click();
-        await page.waitForTimeout(500);
-        expect(true).toBeTruthy();
-      } else {
-        // Page loaded without tabs — still pass
-        expect(true).toBeTruthy();
-      }
-    } catch {
-      test.skip();
-    }
-  });
-
-  test('export buttons (PDF/CSV) are available', async ({ page }) => {
-    try {
-      const exportButtons = page.locator('button').filter({
-        hasText: /Export|PDF|CSV|Download/i,
-      });
-      const exportCount = await exportButtons.count();
-
-      if (exportCount > 0) {
-        expect(exportCount).toBeGreaterThan(0);
-      } else {
-        test.skip();
-      }
-    } catch {
-      test.skip();
-    }
-  });
+test.describe('Reports - Maintenance Reports',()=>{
+ test.beforeEach(async({page,request})=>{await signIn(page,request);await maintenance(page);});
+ test('maintenance reports page loads successfully',async({page})=>{await expect(page.getByRole('heading',{name:'Maintenance Reports',exact:true})).toBeVisible();});
+ test('date range picker or filter controls are present',async({page})=>{
+   await expect(page.getByRole('main').getByText('Date Range',{exact:true})).toBeVisible();
+ });
+ test('can interact with date range controls',async({page})=>{
+   await page.setViewportSize({width:390,height:844});
+   const fields=page.getByRole('main').locator('input[type=date]');
+   await expect(fields).toHaveCount(2);
+   await fields.nth(0).fill('2024-01-01');
+   await fields.nth(1).fill('2024-12-31');
+   const response=page.waitForResponse(r=>{
+     const u=new URL(r.url());return u.pathname==='/api/reports/maintenance'&&u.searchParams.get('startDate')==='2024-01-01'&&u.searchParams.get('endDate')==='2024-12-31';
+   });
+   // Auto-fetch can run after changing either input; explicitly regenerate too.
+   await page.getByRole('button',{name:'Generate Report'}).click();
+   expect((await response).status()).toBe(200);
+   await expect(fields.nth(0)).toHaveValue('2024-01-01');
+   await expect(fields.nth(1)).toHaveValue('2024-12-31');
+   await expect(page.getByText('Total Work Orders',{exact:true})).toBeVisible();
+ });
+ test('generate report button is present',async({page})=>{
+   const response=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/reports/maintenance');
+   await page.getByRole('button',{name:'Generate Report'}).click();
+   expect((await response).status()).toBe(200);
+   await expect(page.getByText('Total Work Orders',{exact:true})).toBeVisible();
+ });
+ test('maintenance KPI cards are displayed',async({page})=>{
+   for(const title of ['Total Work Orders','Completion Rate','Avg Completion Time','Avg Cost / WO','SLA Compliance','Overdue'])
+     await expect(page.getByRole('main').getByText(title,{exact:true}).first()).toBeVisible();
+ });
+ test('report tabs or sections are available',async({page})=>{
+   for(const name of ['Overview','Technician Productivity','Materials & Costs','Downtime','Detailed Data']){
+     const tab=page.getByRole('tab',{name,exact:true});
+     await tab.click();
+     await expect(tab).toHaveAttribute('aria-selected','true');
+     await expect(page.getByRole('tabpanel',{name,exact:true})).toBeVisible();
+   }
+ });
+ test('export buttons (PDF/CSV) download real files',async({page})=>{
+   await page.getByRole('tab',{name:'Overview',exact:true}).click();
+   const csvWait=page.waitForEvent('download');
+   await page.getByRole('button',{name:'Excel',exact:true}).click();
+   const csv=await csvWait;
+   expect(csv.suggestedFilename()).toMatch(/\.csv$/i);
+   expect((await readFile((await csv.path())!,'utf8'))).toContain('Work Orders by Type');
+   const pdfWait=page.waitForEvent('download');
+   await page.getByRole('button',{name:'PDF',exact:true}).click();
+   const pdf=await pdfWait;
+   expect(pdf.suggestedFilename()).toMatch(/\.pdf$/i);
+   expect((await readFile((await pdf.path())!)).subarray(0,5).toString()).toBe('%PDF-');
+ });
 });

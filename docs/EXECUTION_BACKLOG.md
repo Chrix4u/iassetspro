@@ -17,8 +17,9 @@ This is the public-safe engineering execution ledger. Do not include customer id
 - [x] Final contextual viewer retest and combined 130-route audit (#722); deployed in f938d6c.
 - [ ] Review screenshots at desktop/mobile, including intermediate widths and overflow in filter bars, tables, dialogs and navigation.
 - [ ] Walk through complete isolated onboarding: organization, plant, departments, functional location hierarchy, equipment position, asset category and registration, assigned users.
-- [ ] Verify primary and non-primary location assignment and historical snapshots; no implicit promotion.
-- [ ] Create multilevel assemblies/parts, parameters, inspection criteria and explicit opening meter readings including zero; exercise edit, view, search and error recovery.
+- [x] Isolated independent location history and primary relocation/frozen MR/WO snapshots (#732–733); actual browser reports passed in CI 46052647826.
+- [x] Isolated factory workbook onboarding, multilevel assemblies/parts, parameters and meters (#731); actual browser test passed in CI 46052647826.
+- [ ] Complete interactive commissioning for all input variants, editing, search, opening meter and error recovery.
 - [ ] Verify equipment image/nameplate ingestion, AI suggestions, human approval, duplicate prevention and source provenance.
 - [ ] Verify licensed real CAD/scan import, model validation, component mapping, zoom/pan/rotate, exploded view and mobile controls. Clearly distinguish illustrative geometry; physical validation requires authorized evidence.
 - [x] Installed spare-part plant and provenance integrity (#723): ten regression tests, merged and deployed.
@@ -61,10 +62,8 @@ This is the public-safe engineering execution ledger. Do not include customer id
 - [ ] Native/mobile/desktop packaging only where separately specified and applicable; do not claim a browser audit verifies native clients.
 
 ## Current checkpoint
-- Live functional build d15a90b9 passed full CI 46044925404 and Deploy 46047719210; public health HTTP 200. Includes integrated production/PM, worker labor administration, responsive viewer and readable inspection parameters.
-- Multilevel hierarchy #731 passed full CI 46045916072; independent location history #732 passed 46046323922; primary relocation and frozen MR/WO history #733 passed 46050176933. All merged; combined main 3005c550 CI 46052647826 pending.
-- Private CAD runtime storage enabled and verified by storage preflight, successful restart, healthy database/cache and anonymous access denial. Active and rollback environment configuration aligned. Local encrypted backup service successful; off-server restore remains unverified.
-- Commissioning preflight #734 includes primary assignment requirement and disabled/unsafe CAD storage detection; latest head 6160c627 CI 46051650427 pending.
-- Photo provenance and same-machine hotspot integrity #735 forward-ports tested draft changes; full CI required. Draft #669 physical authenticity, independently approved actual-machine geometry, external backup restore and witnessed acceptance remain separate gates.
-- #727 and #729 superseded by consolidated #725 and reconciled #730 respectively; do not merge stale duplicates.
-- Next: merge only exact-head passing checks, deploy combined main, verify health and CAD readiness; execute remaining isolated UI commissioning and report parity, followed by witnessed site acceptance. Never certify physical machine or OEM source from synthetic fixtures.
+- Main 794996b8 passed required CI 46082341387 and Deploy 46084158226. Live health verified; earlier combined release 0589776f deployed via 46067118747.
+- #731–733 actual isolated browser reports verified multilevel factory onboarding, independent location history and frozen maintenance location snapshots. Deployed CI 46052647826 platform reports: 220 passes, zero failures/flaky, 46 skips. Some older suites catch errors and skip; do not count those as coverage.
+- #734 commissioning preflight and #735 private photo provenance/hotspot integrity merged and deployed. CAD storage preflight passes; private synthetic photo/scan acceptance passed. Genuine OEM geometry, actual machine evidence and off-server recovery remain separate gates.
+- #736 PM and asset filter corrections merged; both responsive filter scenarios passed, but sticky shortcut scenario passed only on retry in CI 46066271910. This change reserves the shortcut footprint and checks the scroll viewport remains stable across visibility transitions on desktop/mobile. Exact-head CI required before merge.
+- Next: complete remaining strict isolated acceptance cases, including engineer portrait print, production workbook formula/period parity, role-based commissioning and legacy skip reconciliation; then witnessed physical acceptance. Never certify actual machine geometry or provenance from synthetic fixtures.

@@ -86,3 +86,12 @@ This is the public-safe engineering execution ledger. Do not include customer id
 - [ ] Do not declare consolidation complete until all above gates pass. Do not initiate unnecessary deployment for documentation-only updates.
 
 Storage checkpoint: partial consolidation only. Continue source-by-source preservation and whole-directory cleanup before declaring runtime-only hosting complete. Current successful production release remains unchanged. Do not merge archive branches automatically.
+
+## Storage consolidation checkpoint — 2026-11-28
+- [x] Reaudit named historical source, worktree, workspace, deployment and release locations, including nested root worktrees. Preserve independent repositories and unresolved stashes/ignored data until reviewed.
+- [x] Anchor previously published historical PR commits via archive/worktree-history-20261128 (f1b359fbbf649d3e079a8da1c32338b8da2193fd), preservation-only tree identical to current main at creation. Do not merge/deploy archive.
+- [x] Remove 53 additional verified linked worktrees, one fully reviewed duplicate repository and three generated/empty QA directories; all 57 post-removal health checks passed. Cumulative verified worktrees removed: 61. Detailed path and byte evidence retained privately.
+- [x] Rehearse exact current/rollback GitHub artifact retrieval and checksum/source verification for 794996b840f1 and 0589776f9478 (CI 46082341387 and 46064052137). Production unchanged by cleanup; database/cache health and scheduler watchdog verified.
+- [ ] Resolve remaining local-only commits, untracked/ignored material, nested Git worktrees, disconnected Git metadata and standalone clones. No staging databases, credentials, confidential data or backups may be deleted or published.
+- [ ] Review superseded failed-deploy inbox package whose original downloadable production artifact is no longer listed; establish recovery or safe reproducibility before deletion.
+- [ ] Finish automatic retention guard hardening, durable GitHub Releases, off-server backup restore and authenticated workflow acceptance. Keep operational evidence restricted.

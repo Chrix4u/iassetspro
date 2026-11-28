@@ -238,6 +238,8 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
     }
   };
 
+  // Keep the header action footprint constant while the tasks step is mounted.
+  // Inserting/removing it changes heading wrapping and the scroll viewport.
   return (
     <ResponsiveDialog
       open={open}
@@ -245,9 +247,6 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
       size="extra-wide"
       desktopMaxWidth="sm:max-w-[94vw] 2xl:max-w-[88rem]"
       title={editTarget ? (step === 'triggers' ? 'Configure PM Triggers' : 'Edit PM Schedule') : 'New PM Assignment'}
-      // Keep the header action footprint constant while the tasks step is mounted.
-      // Inserting/removing it changes the mobile heading wrapping and scroll viewport,
-      // which can make the visibility observer oscillate and lose a pending click.
       headerAction={step === 'tasks' ? (
         <Button type="button" size="sm" variant="outline"
           className={`h-8 shrink-0 text-xs ${taskToolbarVisible ? 'invisible pointer-events-none' : ''}`}

@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/tooltip';
 import {
   Menu, ChevronLeft, ChevronRight, ChevronDown, Sun, Moon, Bell, LogOut,
-  LayoutDashboard, Building2, History, Search,
+  LayoutDashboard, Building2, History, Search, Settings,
 } from 'lucide-react';
 import type { PageName, Plant } from '@/types';
 import { PAGE_PERMISSIONS, pageHasPermission, pageModuleIsEnabled, pageModuleStateResolved } from '@/lib/page-access';
@@ -662,7 +662,8 @@ function AppShell() {
                 <DropdownMenuItem onClick={() => navigate('dashboard')}><LayoutDashboard className="h-4 w-4 mr-2.5" />Dashboard</DropdownMenuItem>
                 {notificationsVisible && <DropdownMenuItem onClick={() => navigate('notifications')}><Bell className="h-4 w-4 mr-2.5" />Notifications</DropdownMenuItem>}
                 <DropdownMenuSeparator />
-                {hasPermission('system_settings.view') && (
+                <DropdownMenuItem onClick={() => navigate('settings-preferences')}><Settings className="h-4 w-4 mr-2.5" />My Preferences</DropdownMenuItem>
+                {isAdmin() && (
                   <>
                     <DropdownMenuItem onClick={() => navigate('settings-company')}><Building2 className="h-4 w-4 mr-2.5" />Company Profile</DropdownMenuItem>
                     {isAdmin() && <DropdownMenuItem onClick={() => navigate('settings-audit')}><History className="h-4 w-4 mr-2.5" />Audit Logs</DropdownMenuItem>}

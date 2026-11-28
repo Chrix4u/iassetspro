@@ -37,7 +37,7 @@ test.describe('Reports & Analytics',()=>{
 });
 test.describe('Reports - Maintenance Reports',()=>{
  test.beforeEach(async({page,request})=>{await signIn(page,request);await maintenance(page);});
- test('maintenance reports page loads successfully',async({page})=>{await expect(page.getByRole('heading',{name:'Maintenance Reports',exact:true})).toBeVisible();});
+ test('maintenance reports page loads successfully',async({page})=>{await expect(page.getByRole('main').getByRole('heading',{name:'Maintenance Reports',exact:true})).toBeVisible();});
  test('date range picker or filter controls are present',async({page})=>{
    await expect(page.getByRole('main').getByText('Date Range',{exact:true})).toBeVisible();
  });
@@ -75,17 +75,40 @@ test.describe('Reports - Maintenance Reports',()=>{
      await expect(page.getByRole('tabpanel',{name,exact:true})).toBeVisible();
    }
  });
- test('export buttons (PDF/CSV) download real files',async({page})=>{
+ test('export CSV downloads real data and PDF opens a printable A4 report',async({page,context},testInfo)=>{
    await page.getByRole('tab',{name:'Overview',exact:true}).click();
    const csvWait=page.waitForEvent('download');
    await page.getByRole('button',{name:'Excel',exact:true}).click();
    const csv=await csvWait;
    expect(csv.suggestedFilename()).toMatch(/\.csv$/i);
    expect((await readFile((await csv.path())!,'utf8'))).toContain('Work Orders by Type');
-   const pdfWait=page.waitForEvent('download');
+   // The shared PDF action intentionally opens a browser print document.
+   // Suppress only the native print dialog, and verify that print is requested.
+   await context.addInitScript(() => {
+     window.print = () => document.documentElement.setAttribute('data-test-print-requested','true');
+   });
+   const popupWait=page.waitForEvent('popup');
    await page.getByRole('button',{name:'PDF',exact:true}).click();
-   const pdf=await pdfWait;
-   expect(pdf.suggestedFilename()).toMatch(/\.pdf$/i);
-   expect((await readFile((await pdf.path())!)).subarray(0,5).toString()).toBe('%PDF-');
+   const popup=await popupWait;
+   try {
+     await expect(popup.getByRole('heading',{name:/^Maintenance Report/})).toBeVisible();
+     await expect(popup.getByRole('region',{name:'Report summary'})).toBeVisible();
+     await expect(popup.getByText('iAssetsPro EAM — Asset Management',{exact:true})).toBeVisible();
+     await expect(popup.locator('html')).toHaveAttribute('data-test-print-requested','true');
+     const pdf=await popup.pdf({preferCSSPageSize:true,printBackground:true});
+     expect(pdf.subarray(0,5).toString()).toBe('%PDF-');
+     expect(pdf.length).toBeGreaterThan(1000);
+     const boxes=[...pdf.toString('latin1').matchAll(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/g)];
+     expect(boxes.length).toBeGreaterThan(0);
+     for(const [,width,height] of boxes){
+       expect(Number(width)).toBeGreaterThanOrEqual(841);
+       expect(Number(width)).toBeLessThanOrEqual(843);
+       expect(Number(height)).toBeGreaterThanOrEqual(594);
+       expect(Number(height)).toBeLessThanOrEqual(596);
+     }
+     await testInfo.attach('maintenance-report-A4-landscape',{body:pdf,contentType:'application/pdf'});
+   } finally {
+     await popup.close();
+   }
  });
 });

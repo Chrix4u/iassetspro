@@ -1,4 +1,5 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 import { assignWO, startWO, logTime, completeWO, verifyWO, closeWO, getWO } from './repairs/helpers/api';
 
 const creds = {
@@ -184,13 +185,13 @@ test('isolated UAT: planner standards, operator entry, independent approval and 
 });
 
 
-test('isolated demonstration: fresh machine, 5500 yards, task-level PM generation and verified closeout',async ({request},testInfo)=>{
+test('isolated demonstration: fresh machine, 5500 yards, task-level PM generation and verified closeout',async ({request,page,context},testInfo)=>{
   if(process.env.CI!=='true'||!process.env.DATABASE_URL?.includes('/platform_e2e?schema=public')||
     process.env.PLAYWRIGHT_BASE_URL!=='http://127.0.0.1:3000'){
     if(process.env.CI)throw new Error('Demonstration must use isolated platform CI');
     test.skip(true,'Only isolated platform CI may create demonstration fixtures');
   }
-  test.setTimeout(180_000);
+  test.setTimeout(240_000);
   const [admin,manager,operator,planner,technician,supervisor,otherPlant]=await Promise.all([actor(request,'admin'),actor(request,'manager'),actor(request,'operator'),actor(request,'planner'),actor(request,'technician'),actor(request,'supervisor'),actor(request,'operatorOtherPlant')]);
   const seedAssets=await request.get('/api/assets?limit=50',{headers:operator});
   expect(seedAssets.status()).toBe(200);
@@ -411,4 +412,56 @@ test('isolated demonstration: fresh machine, 5500 yards, task-level PM generatio
     expect(rows[0].targetAchievementPct).toBeCloseTo(91.6667,3);
     expect(rows[0].engineeringEfficiencyPct).toBeCloseTo(95.8333,3);
   }
+  // Exercise the actual manager report UI and downloaded workbook-compatible
+  // CSV, not just the JSON report endpoint.
+  await context.addInitScript(({token,plantId})=>{
+    localStorage.setItem('eam_token',token);
+    localStorage.setItem('user_plant_id',plantId);
+  },{token:token(manager),plantId});
+  await page.setViewportSize({width:1440,height:900});
+  await page.goto('/#/production-survey');
+  const survey=page.getByTestId('production-shift-survey');
+  await expect(survey.getByRole('heading',{name:'Production Survey & PM Usage',exact:true})).toBeVisible({timeout:30_000});
+  await survey.getByRole('combobox',{name:'Find machine by name or code'}).click();
+  await page.getByPlaceholder('Search...', {exact:true}).fill('DEMO-ST-'+suffix);
+  await page.getByRole('option',{name:'Synthetic demo stenter '+suffix+' [DEMO-ST-'+suffix+']',exact:true}).click();
+  const reportCard=survey.locator('[data-slot="card"]').filter({has:survey.getByText('Production performance reports',{exact:true})});
+  const dates=reportCard.locator('input[type=date]');
+  await expect(dates).toHaveCount(2);
+  const table=reportCard.getByRole('table');
+  const exportForDate=async(date:string)=>{
+    await dates.nth(0).fill(date);
+    const response=page.waitForResponse(r=>{
+      const u=new URL(r.url());
+      return u.pathname==='/api/production-surveys/report'&&u.searchParams.get('assetId')===assetId&&
+        u.searchParams.get('from')===date&&u.searchParams.get('to')===date&&u.searchParams.get('group')==='day';
+    });
+    await dates.nth(1).fill(date);
+    // An unchanged date input may not fire onChange; refresh explicitly.
+    await survey.getByRole('button',{name:'Refresh',exact:true}).click();
+    expect((await response).status()).toBe(200);
+    await expect(table.locator('tbody tr')).toHaveCount(1);
+    await expect(table.getByText('DEMO-ST-'+suffix,{exact:true})).toBeVisible();
+    const downloadPromise=page.waitForEvent('download');
+    await reportCard.getByRole('button',{name:'Export CSV',exact:true}).click();
+    const download=await downloadPromise;
+    expect(download.suggestedFilename()).toBe('production-survey-day-'+date+'-'+date+'.csv');
+    const csv=(await readFile((await download.path())!,'utf8')).replace(/^\uFEFF/,'');
+    const lines=csv.trimEnd().split(/\r?\n/);
+    expect(lines).toHaveLength(2);
+    const cells=(line:string)=>[...line.matchAll(/"((?:[^"]|"")*)"/g)].map(m=>m[1].replace(/""/g,'"'));
+    const headers=cells(lines[0]),values=cells(lines[1]);
+    expect(headers).toHaveLength(30);expect(values).toHaveLength(30);
+    await testInfo.attach('production-workbook-'+date,{body:csv,contentType:'text/csv'});
+    return Object.fromEntries(headers.map((h,i)=>[h,values[i]]));
+  };
+  const actual=await exportForDate(productionDate);
+  expect(actual).toMatchObject({'Machine Code':'DEMO-ST-'+suffix,'Unit':'yards',
+    'Gross Production':'5500','Defective Production':'100','Good Production':'5400',
+    'Target':'6000','Available Min':'480','Stoppage Min':'90','Productive Min':'390',
+    'Period Cumulative Production':'5500','PM Meter Output':'5500'});
+  const pending=await exportForDate(futurePlan.productionDate);
+  expect(pending).toMatchObject({'Scheduled Shifts':'1','Unapproved/Missing Shifts':'1',
+    'Gross Production':'','Defective Production':'','Good Production':'',
+    'Target Achievement %':'','Period Cumulative Production':''});
 });

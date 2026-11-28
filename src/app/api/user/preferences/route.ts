@@ -80,9 +80,9 @@ export async function PUT(request: NextRequest) {
 
     // Date/Time preferences
     if (dateTime) {
-      const validFormats = ['MM/DD/YYYY', 'DD/MM/YYYY', 'YYYY-MM-DD'];
+      const validFormats = ['DD/MM/YYYY', 'DD-MM-YYYY'];
       preferences.dateTime = {
-        dateFormat: validFormats.includes(dateTime.dateFormat) ? dateTime.dateFormat : 'YYYY-MM-DD',
+        dateFormat: validFormats.includes(dateTime.dateFormat) ? dateTime.dateFormat : 'DD/MM/YYYY',
         timezone: typeof dateTime.timezone === 'string' ? dateTime.timezone : Intl.DateTimeFormat().resolvedOptions().timeZone,
       };
     }

@@ -427,7 +427,7 @@ test('isolated demonstration: fresh machine, 5500 yards, task-level PM generatio
   await survey.getByRole('combobox',{name:'Find machine by name or code'}).click();
   await page.getByPlaceholder('Search...', {exact:true}).fill('DEMO-ST-'+suffix);
   await page.getByRole('option',{name:'Synthetic demo stenter '+suffix+' [DEMO-ST-'+suffix+']',exact:true}).click();
-  const reportCard=survey.locator('[data-slot="card"]').filter({has:survey.getByText('Production performance reports',{exact:true})});
+  const reportCard=survey.locator('[data-slot="card"]').filter({has:page.getByText('Production performance reports',{exact:true})});
   const dates=reportCard.locator('input[type=date]');
   await expect(dates).toHaveCount(2);
   const table=reportCard.getByRole('table');

@@ -191,7 +191,7 @@ test('isolated demonstration: fresh machine, 5500 yards, task-level PM generatio
     test.skip(true,'Only isolated platform CI may create demonstration fixtures');
   }
   test.setTimeout(180_000);
-  const [admin,manager,operator,planner,technician,supervisor]=await Promise.all([actor(request,'admin'),actor(request,'manager'),actor(request,'operator'),actor(request,'planner'),actor(request,'technician'),actor(request,'supervisor')]);
+  const [admin,manager,operator,planner,technician,supervisor,otherPlant]=await Promise.all([actor(request,'admin'),actor(request,'manager'),actor(request,'operator'),actor(request,'planner'),actor(request,'technician'),actor(request,'supervisor'),actor(request,'operatorOtherPlant')]);
   const seedAssets=await request.get('/api/assets?limit=50',{headers:operator});
   expect(seedAssets.status()).toBe(200);
   const plantId=(await seedAssets.json()).data.find((a:{plantId?:string})=>a.plantId)?.plantId as string;
@@ -218,12 +218,33 @@ test('isolated demonstration: fresh machine, 5500 yards, task-level PM generatio
   const created=await request.post('/api/assets',{headers:admin,data:{
     name:'Synthetic demo stenter '+suffix,assetTag:'DEMO-ST-'+suffix,categoryId,plantId,functionalLocationId,
     acquisitionCondition:'new',status:'operational',criticality:'high',
+    manufacturer:'Synthetic CI manufacturer',model:'Synthetic CI stenter',serialNumber:'CI-DEMO-'+suffix,
     machineParameters:[{name:'Chamber temperature',inspectionType:'measurement',unit:'C',min:150,max:180,reference:'Synthetic test fixture only'}],
     meters:[{name:outputName,meterType:'production',unit:'yards',initialValue:0},
       {name:runtimeName,meterType:'runtime',unit:'hours',initialValue:0}],
   }});
   expect(created.status(),await created.text()).toBe(201);
   const assetId=(await created.json()).data.id as string;
+  const readinessUrl='/api/assets/'+assetId+'/commissioning-readiness';
+  const readiness=async()=>{
+    const response=await request.get(readinessUrl,{headers:{...planner,'X-Plant-ID':plantId}});
+    expect(response.status(),await response.text()).toBe(200);
+    expect(response.headers()['cache-control']).toContain('no-store');
+    const data=(await response.json()).data;
+    expect(data.assetId).toBe(assetId);
+    expect(data.totalChecks).toBe(10);
+    expect(data.physicalAcceptanceComplete).toBe(false);
+    expect(data.softwarePreflightComplete).toBe(false);
+    expect(data.configuredCount).toBe(data.checks.filter((row:{state:string})=>row.state==='configured').length);
+    return Object.fromEntries(data.checks.map((row:{key:string;state:string})=>[row.key,row.state]));
+  };
+  expect((await request.get(readinessUrl)).status()).toBe(401);
+  expect((await request.get(readinessUrl,{headers:otherPlant})).status()).toBe(403);
+  const initialReadiness=await readiness();
+  // A secondary hierarchy must never be counted as a primary installed path.
+  // This test has no licensed CAD or genuine photos, even with a complete identity.
+  expect(initialReadiness).toMatchObject({identity:'configured',location:'missing',hierarchy:'missing',
+    meters:'configured',photos:'missing',cad:'missing',pm:'missing',shifts:'missing',production:'missing'});
   const locations=await request.get('/api/assets/'+assetId+'/functional-locations',{headers:admin});
   expect(locations.status()).toBe(200);
   expect((await locations.json()).data.current.some((a:{functionalLocationId:string})=>a.functionalLocationId===functionalLocationId)).toBe(true);
@@ -265,6 +286,9 @@ test('isolated demonstration: fresh machine, 5500 yards, task-level PM generatio
     standardUtilizationPct:85,standardSpeed:15};
   const published=await request.post('/api/production-surveys/plans',{headers:manager,data:plan});
   expect(published.status(),await published.text()).toBe(200);
+  const futurePlan={...plan,productionDate:new Date(Date.now()+86400000).toISOString().slice(0,10)};
+  const futurePublished=await request.post('/api/production-surveys/plans',{headers:manager,data:futurePlan});
+  expect(futurePublished.status(),await futurePublished.text()).toBe(200);
   const pmTask=await request.post('/api/pm-tasks',{headers:{...planner,'X-Plant-ID':plantId},data:{
     description:'Synthetic bearing lubrication '+suffix,taskType:'lubrication',
   }});
@@ -285,6 +309,8 @@ test('isolated demonstration: fresh machine, 5500 yards, task-level PM generatio
     return (await result.json()).data.thresholds.find((t:{meterName:string})=>t.meterName===outputName);
   };
   expect(await getThreshold()).toMatchObject({state:'upcoming',currentValue:0,nextDueReading:5000});
+  expect(await readiness()).toMatchObject({parameters:'configured',meters:'configured',
+    pm:'configured',shifts:'configured',production:'missing',photos:'missing',cad:'missing'});
   const evaluate=async()=>{
     const response=await request.post('/api/pm-schedules/check-due',{headers:{...planner,'X-Plant-ID':plantId},data:{}});
     expect(response.status(),await response.text()).toBe(200);
@@ -306,6 +332,7 @@ test('isolated demonstration: fresh machine, 5500 yards, task-level PM generatio
   const approval=await request.post(review,{headers:manager,data:{action:'approve'}});
   expect(approval.status(),await approval.text()).toBe(200);
   expect((await approval.json()).data).toMatchObject({meterPosted:true,runtimeMeterPosted:true});
+  expect(await readiness()).toMatchObject({production:'configured',photos:'missing',cad:'missing'});
   const replay=await request.post(review,{headers:manager,data:{action:'approve'}});
   expect(replay.status()).toBe(200);
   expect((await replay.json()).data.duplicate).toBe(true);
@@ -368,6 +395,7 @@ test('isolated demonstration: fresh machine, 5500 yards, task-level PM generatio
   expect(Number(closed.laborCost)).toBeCloseTo(Number(closed.actualHours)*50,2);
   expect(Number(closed.totalCost)).toBeGreaterThanOrEqual(25);
   expect(closed.laborCurrency).toBe('GHS');
+  expect(await readiness()).toMatchObject({identity:'configured',location:'missing',parameters:'configured',meters:'configured',pm:'configured',shifts:'configured',production:'configured',photos:'missing',cad:'missing'});
   expect(await getThreshold()).toMatchObject({state:'upcoming',currentValue:5500,nextDueReading:10500,remaining:5000});
   expect(await evaluate()).toHaveLength(0);
   expect((await getMeters()).find(m=>m.id===output!.id)?.currentValue).toBe(5500);

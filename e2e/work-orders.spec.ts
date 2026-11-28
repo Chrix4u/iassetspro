@@ -1,136 +1,44 @@
-import { test, expect, type Page } from '@playwright/test';
-
-// ─── Demo credentials ──────────────────────────────────────────────────────
-const ADMIN_CREDENTIALS = { username: 'admin', password: 'admin123' };
-
-// ─── Helper: login and navigate to work orders page ────────────────────────
-async function loginAndNavigateToWorkOrders(page: Page): Promise<boolean> {
-  try {
-    await page.goto('/');
-    await page.waitForSelector('input[placeholder="Enter your username"]', { timeout: 10_000 });
-    await page.fill('input[placeholder="Enter your username"]', ADMIN_CREDENTIALS.username);
-    await page.fill('input[placeholder="Enter your password"]', ADMIN_CREDENTIALS.password);
-    await page.click('button[type="submit"]');
-
-    // Wait for dashboard
-    await page.waitForURL(/#\/dashboard/, { timeout: 15_000 });
-    await page.waitForTimeout(2000);
-
-    // Navigate to work orders page
-    await page.goto('/#/maintenance-work-orders');
-    await page.waitForTimeout(3000);
-
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-test.describe('Work Orders', () => {
-  test.beforeEach(async ({ page }) => {
-    const ready = await loginAndNavigateToWorkOrders(page);
-    if (!ready) {
-      test.skip();
-    }
-  });
-
-  test('work orders page loads successfully', async ({ page }) => {
-    const bodyText = await page.textContent('body');
-    const hasWorkOrderContent =
-      bodyText?.includes('Work Order') ||
-      page.url().includes('#/maintenance-work-orders');
-
-    expect(hasWorkOrderContent).toBeTruthy();
-  });
-
-  test('work order list or table is visible', async ({ page }) => {
-    try {
-      const table = page.locator('table, [class*="table"]').first();
-      const list = page.locator('[class*="list"], [role="list"]').first();
-
-      const tableVisible = await table.isVisible().catch(() => false);
-      const listVisible = await list.isVisible().catch(() => false);
-
-      expect(tableVisible || listVisible).toBeTruthy();
-    } catch {
-      test.skip();
-    }
-  });
-
-  test('status filters are available', async ({ page }) => {
-    try {
-      const bodyText = await page.textContent('body');
-
-      // Check for common status filter indicators
-      const hasStatusFilters =
-        bodyText?.includes('Open') ||
-        bodyText?.includes('In Progress') ||
-        bodyText?.includes('Completed') ||
-        bodyText?.includes('Closed') ||
-        bodyText?.includes('Pending') ||
-        bodyText?.includes('Status');
-
-      // Also look for filter buttons or tabs
-      const filterButtons = page.locator('button').filter({
-        hasText: /Open|Closed|Completed|Pending|All|Status/i,
-      });
-      const filterCount = await filterButtons.count();
-
-      expect(hasStatusFilters || filterCount > 0).toBeTruthy();
-    } catch {
-      test.skip();
-    }
-  });
-
-  test('can click a status filter', async ({ page }) => {
-    try {
-      // Find and click a status filter button
-      const statusButton = page.locator('button').filter({
-        hasText: /Open|All|Draft/i,
-      }).first();
-
-      if (await statusButton.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        await statusButton.click();
-        await page.waitForTimeout(500);
-        // Should not crash
-        expect(true).toBeTruthy();
-      } else {
-        test.skip();
-      }
-    } catch {
-      test.skip();
-    }
-  });
-
-  test('create work order button is present', async ({ page }) => {
-    try {
-      const createButton = page.locator('button').filter({
-        hasText: /Add|Create|New/i,
-      }).first();
-
-      if (await createButton.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        expect(true).toBeTruthy();
-      } else {
-        test.skip();
-      }
-    } catch {
-      test.skip();
-    }
-  });
-
-  test('work order items have clickable rows or links', async ({ page }) => {
-    try {
-      // Check if table rows or list items are interactive
-      const rows = page.locator('tbody tr, [role="row"], [class*="cursor-pointer"], a[href*="work-order"]');
-      const rowCount = await rows.count();
-
-      if (rowCount > 0) {
-        expect(rowCount).toBeGreaterThan(0);
-      } else {
-        test.skip();
-      }
-    } catch {
-      test.skip();
-    }
-  });
+import { test, expect } from '@playwright/test';
+import { signIn, openPage } from './helpers/strict-platform';
+test.describe('Work Orders',()=>{
+ test.beforeEach(async({page,request})=>{
+   await page.setViewportSize({width:1440,height:900});
+   await signIn(page,request);
+   await openPage(page,'maintenance-work-orders','Work Orders');
+   await expect(page.getByRole('columnheader',{name:'WO #',exact:true})).toBeVisible();
+ });
+ test('work orders page loads successfully',async({page})=>{
+   await expect(page.getByRole('main').getByText('Total WOs',{exact:true})).toBeVisible();
+ });
+ test('work order list or table is visible',async({page})=>{
+   await expect(page.getByRole('columnheader',{name:'Title',exact:true})).toBeVisible();
+   await expect(page.getByRole('columnheader',{name:'Status',exact:true})).toBeVisible();
+ });
+ test('status filters are available',async({page})=>{
+   await expect(page.getByRole('combobox').filter({hasText:'All Status'})).toBeVisible();
+   await expect(page.getByRole('combobox').filter({hasText:'All Priority'})).toBeVisible();
+ });
+ test('can click a status filter',async({page})=>{
+   await page.getByRole('combobox').filter({hasText:'All Status'}).click();
+   await page.getByRole('option',{name:'Completed',exact:true}).click();
+   await expect(page.getByRole('combobox').filter({hasText:'Completed'})).toBeVisible();
+   const rows=page.getByRole('table').filter({has:page.getByRole('columnheader',{name:'WO #'})}).locator('tbody tr');
+   await expect.poll(async()=>rows.evaluateAll(items=>items.every(r=>r.textContent?.includes('No work orders found')||r.children[4]?.textContent?.trim().toLowerCase()==='completed'))).toBe(true);
+ });
+ test('create work order button is present',async({page})=>{
+   await page.getByRole('button',{name:'New Work Order',exact:true}).click();
+   const dialog=page.getByRole('dialog',{name:'Create Work Order'});
+   await expect(dialog).toBeVisible();
+   await expect(dialog.getByRole('button',{name:'Create WO',exact:true})).toBeVisible();
+ });
+ test('work order items have clickable rows or links',async({page})=>{
+   const table=page.getByRole('table').filter({has:page.getByRole('columnheader',{name:'WO #'})});
+   const row=table.locator('tbody tr').filter({has:page.getByRole('button',{name:'Open Work Order',exact:true})}).first();
+   await expect(row).toBeVisible();
+   const title=await row.locator('td').nth(1).innerText();
+   expect(title.trim()).not.toBe('');
+   await row.getByRole('button',{name:'Open Work Order',exact:true}).click();
+   await expect(page.getByRole('main').getByRole('heading',{name:title,exact:true}).first()).toBeVisible({timeout:25_000});
+   await expect(page).toHaveURL(/#\/wo-detail\?/);
+ });
 });

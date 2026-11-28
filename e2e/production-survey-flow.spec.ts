@@ -112,7 +112,9 @@ test('isolated UAT: planner standards, operator entry, independent approval and 
   expect(pmSchedule.status()).toBe(201);
   // An assigned operator cannot submit a shift before its scheduled end.
   // Use tomorrow, independent of the CI runner's execution time.
-  const futurePlan={...plan,productionDate:new Date(Date.now()+86400000).toISOString().slice(0,10)};
+  // Reserve a distinct future date within the 31-day readiness window.
+  // The earlier scenario already reserves tomorrow for this operator.
+  const futurePlan={...plan,productionDate:new Date(Date.now()+(10+testInfo.retry)*86400000).toISOString().slice(0,10)};
   const futureSchedule=await request.post('/api/production-surveys/plans',{
     headers:manager,data:futurePlan,
   });

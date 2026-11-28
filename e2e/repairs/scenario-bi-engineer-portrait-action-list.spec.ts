@@ -1,18 +1,69 @@
 import { test, expect } from '@playwright/test';
-import { writeFileSync, unlinkSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import { authenticateAs } from './helpers/auth';
-import { getToken, lookupPlantId } from './helpers/api';
+import { apiCallWithPlant, getToken, lookupPlantId } from './helpers/api';
 
-/** Run manually against the commissioned UAT plant:
- * RUN_LIVE_PM_PORTRAIT_UAT=1 PLAYWRIGHT_BASE_URL=... playwright test ...
- * No inspection values or corrective WOs are created.
+/** Isolated CI uses a synthetic machine commissioned through planner APIs.
+ * Explicit manual UAT retains the real commissioned-machine acceptance path.
+ * Printing issues a blank worksheet; no readings or corrective WOs are created.
  */
-test('Live engineer Action List prints as A4 portrait with one-line codes and four full parameters', async ({page,context}) => {
-  test.skip(process.env.RUN_LIVE_PM_PORTRAIT_UAT !== '1', 'Requires commissioned UAT plant');
+test('Engineer Action List prints as A4 portrait with one-line codes and four full parameters', async ({page,context}, testInfo) => {
+  const isolatedCI = process.env.CI === 'true' &&
+    (process.env.DATABASE_URL || '').includes('/repairs_uat?') &&
+    process.env.PLAYWRIGHT_BASE_URL === 'http://127.0.0.1:3000';
+  if (process.env.CI === 'true' && !isolatedCI) throw new Error('Portrait fixture requires isolated Repairs CI');
+  test.skip(!isolatedCI && process.env.RUN_LIVE_PM_PORTRAIT_UAT !== '1', 'Requires isolated Repairs CI or explicit commissioned UAT');
   test.setTimeout(160000);
   const planner=await getToken('planner');
-  const plant=await lookupPlantId(planner,'TEMA-UAT-01');
+  const plant=await lookupPlantId(planner,isolatedCI?'PLANT-A':'TEMA-UAT-01');
+  let machineTag='UAT-BFP-501';
+  let machineName='Multistage Boiler Feed Pump BFP-501';
+  if(isolatedCI){
+    const stamp=randomUUID().slice(0,6).toUpperCase();
+    machineTag='CI-PRINT-'+stamp;
+    machineName='CI synthetic inspection pump '+stamp;
+    const get=async(path:string)=>{
+      const r=await apiCallWithPlant(planner,'GET',path,plant);
+      expect(r.status,JSON.stringify(r.data)).toBe(200);
+      return r.data.data;
+    };
+    const post=async(path:string,payload:Record<string,unknown>)=>{
+      const r=await apiCallWithPlant(planner,'POST',path,plant,payload);
+      expect(r.status,JSON.stringify(r.data)).toBe(201);
+      return r.data.data;
+    };
+    const categories=await get('/api/asset-categories');
+    expect(categories[0]?.id).toBeTruthy();
+    const machine=await post('/api/assets',{name:machineName,assetTag:machineTag,plantId:plant,categoryId:categories[0].id,status:'operational'});
+    const block='B'+stamp,sub='S'+stamp,component='C'+stamp;
+    const partCodes=Array.from({length:5},(_,i)=>'P'+stamp+'-'+(i+1));
+    const rows=[
+      {componentCode:block,name:'CI block',componentType:'assembly'},
+      {componentCode:sub,name:'CI part group',componentType:'subassembly',parentCode:block},
+      {componentCode:component,name:'CI virtual part',componentType:'component',parentCode:sub},
+      ...partCodes.map((code,i)=>({componentCode:code,name:'CI inspection part '+(i+1),componentType:'part',parentCode:component})),
+    ];
+    await post('/api/component-registry/bulk',{assetId:machine.id,rows});
+    const components=await get('/api/component-registry?assetId='+encodeURIComponent(machine.id)+'&limit=100');
+    const task=await post('/api/pm-tasks',{description:'CI inspect pump assembly '+stamp,taskType:'mechanical'});
+    const due=new Date(Date.now()+7*86400000).toISOString();
+    for(const [index,code] of partCodes.entries()){
+      const part=components.find((item:{componentCode:string})=>item.componentCode===code);
+      expect(part?.id).toBeTruthy();
+      await post('/api/pm-assignments',{assetId:machine.id,componentId:part.id,pmTaskId:task.id,
+        pmType:'tbm',activityMode:'inspection',inspectionType:'running',frequencyType:'time_day',
+        value:1,unit:'weeks',nextDueDate:due,estimatedMinutes:5});
+      const checks=index===0
+        ? [{key:'temperature',unit:'C',max:80},{key:'vibration',unit:'mm/s',max:4.5},
+           {key:'sound',unit:'dB',max:85},{key:'corrosion',unit:'mm',max:1}]
+        : [{key:'temperature',unit:'C',max:80}];
+      for(const check of checks)await post('/api/pm-inspections',{componentId:part.id,name:check.key,
+        inspectionType:'measurement',frequency:'weekly',parameterKey:check.key,unit:check.unit,min:0,max:check.max,nextInspection:due});
+    }
+    const checklist=await get('/api/pm-inspections/checklist?assetId='+encodeURIComponent(machine.id)+'&equipmentState=running');
+    expect(checklist.totalAssignments).toBe(5);
+    expect(checklist.totalConfiguredPoints).toBe(8);
+  }
   await authenticateAs(context,'planner');
   await page.goto('/');
   await page.evaluate(id=>localStorage.setItem('user_plant_id',id),plant);
@@ -20,9 +71,10 @@ test('Live engineer Action List prints as A4 portrait with one-line codes and fo
   const panel=page.getByTestId('pm-inspection-worksheet');
   await expect(panel).toBeVisible({timeout:30000});
   const choose=panel.getByTestId('pm-inspection-generate-machine').getByRole('combobox').first();
-  if(!(await choose.innerText()).includes('UAT-BFP-501')){
+  if(!(await choose.innerText()).includes(machineTag)){
     await choose.click();
-    await page.getByText('Multistage Boiler Feed Pump BFP-501 [UAT-BFP-501]',{exact:true}).last().click();
+    await page.getByPlaceholder('Search...', {exact:true}).fill(machineTag);
+    await page.getByText(machineName+' ['+machineTag+']',{exact:true}).last().click();
   }
   await panel.getByRole('button',{name:'Generate Action List'}).click();
   const checklist=page.getByTestId('pm-machine-checklist');
@@ -78,17 +130,23 @@ test('Live engineer Action List prints as A4 portrait with one-line codes and fo
     nodes.filter(node=>(node.textContent||'').trim() && node.scrollWidth>node.clientWidth+1)
       .map(node=>({code:node.textContent,width:node.clientWidth,content:node.scrollWidth})));
   expect(clippedCodes,'all printed hierarchy codes should be visible, not clipped').toEqual([]);
-  const path='/tmp/iassets-portrait-uat-bfp-501.pdf';
   const pdf=await page.pdf({printBackground:true,preferCSSPageSize:true});
-  writeFileSync(path,pdf);
-  const info=execFileSync('pdfinfo',[path],{encoding:'utf8'});
-  unlinkSync(path);
-  expect(info).toMatch(/Page size:\s+59[45]\.\d+ x 84[12]\.\d+ pts \(A4\)/i);
-  expect(info).not.toMatch(/842\.\d+ x 595\.\d+/);
-  const pageCount=Number(info.match(/Pages:\s+(\d+)/)?.[1]||0);
+  // Chromium emits readable PDF page dictionaries; validate every MediaBox
+  // without requiring an unrelated system package install on CI runners.
+  const dictionaries=pdf.toString('latin1');
+  const boxes=[...dictionaries.matchAll(/\/MediaBox\s*\[\s*0\s+0\s+([\d.]+)\s+([\d.]+)\s*\]/g)];
+  const pageCount=[...dictionaries.matchAll(/\/Type\s*\/Page\b/g)].length;
   expect(pageCount).toBeGreaterThan(0);
+  expect(boxes).toHaveLength(pageCount);
+  for(const box of boxes){
+    expect(Number(box[1])).toBeGreaterThanOrEqual(594);
+    expect(Number(box[1])).toBeLessThanOrEqual(596);
+    expect(Number(box[2])).toBeGreaterThanOrEqual(841);
+    expect(Number(box[2])).toBeLessThanOrEqual(843);
+  }
+  if(isolatedCI)await testInfo.attach('synthetic-A4-portrait-action-list',{body:pdf,contentType:'application/pdf'});
   console.log('PORTRAIT_ENGINEER_PRINT_VERIFIED',JSON.stringify({
-    machine:'UAT-BFP-501',paperRows:await rows.count(),pdfBytes:pdf.byteLength,
+    machine:machineTag,synthetic:isolatedCI,paperRows:await rows.count(),pdfBytes:pdf.byteLength,
     pageSize:'A4 portrait',pageCount,codeWhiteSpace:'nowrap',
     headings:headers,editableFields:await editable.count()
   }));

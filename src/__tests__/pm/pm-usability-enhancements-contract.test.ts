@@ -8,7 +8,11 @@ describe('PM usability refinements', () => {
   it('offers Add Task from Library in the header only when its original row is outside the visible scroll area', () => {
     const form = read('src/components/modules/pm/PmAssignmentFormDialog.tsx');
     const planner = read('src/components/modules/pm/PmAssignmentTaskPlanner.tsx');
-    expect(form).toContain('!taskToolbarVisible');
+    expect(form).toContain("headerAction={step === 'tasks' ? (");
+    expect(form).toContain("taskToolbarVisible ? 'invisible pointer-events-none' : ''");
+    expect(form).toContain('aria-hidden={taskToolbarVisible || undefined}');
+    expect(form).toContain('tabIndex={taskToolbarVisible ? -1 : undefined}');
+    expect(form).toContain('disabled={taskToolbarVisible || saving || templateLoading || !assetId || !targetConfirmed}');
     expect(form).toContain('pm-sticky-add-task');
     expect(form).toContain('pickerOpen={taskPickerOpen}');
     expect(planner).toContain("closest('.responsive-dialog-body')");

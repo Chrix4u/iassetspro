@@ -245,11 +245,21 @@ export function PmAssignmentFormDialog({ open, onOpenChange, onSaved, editTarget
       size="extra-wide"
       desktopMaxWidth="sm:max-w-[94vw] 2xl:max-w-[88rem]"
       title={editTarget ? (step === 'triggers' ? 'Configure PM Triggers' : 'Edit PM Schedule') : 'New PM Assignment'}
-      headerAction={step === 'tasks' && !taskToolbarVisible ? (
-        <Button type="button" size="sm" variant="outline" className="h-8 shrink-0 text-xs"
-          data-testid="pm-sticky-add-task" onClick={() => setTaskPickerOpen(true)}
-          disabled={saving || templateLoading || !assetId || !targetConfirmed}>
-          <Plus className="mr-1 h-3.5 w-3.5" />Add Task from Library
+      // Keep the header action footprint constant while the tasks step is mounted.
+      // Inserting/removing it changes the mobile heading wrapping and scroll viewport,
+      // which can make the visibility observer oscillate and lose a pending click.
+      headerAction={step === 'tasks' ? (
+        <Button type="button" size="sm" variant="outline"
+          className={`h-8 shrink-0 text-xs ${taskToolbarVisible ? 'invisible pointer-events-none' : ''}`}
+          data-testid="pm-sticky-add-task"
+          aria-label="Add Task from Library"
+          aria-hidden={taskToolbarVisible || undefined}
+          tabIndex={taskToolbarVisible ? -1 : undefined}
+          onClick={() => setTaskPickerOpen(true)}
+          disabled={taskToolbarVisible || saving || templateLoading || !assetId || !targetConfirmed}>
+          <Plus className="mr-1 h-3.5 w-3.5" />
+          <span className="sm:hidden">Add Task</span>
+          <span className="hidden sm:inline">Add Task from Library</span>
         </Button>
       ) : null}
       description={step === 'tasks' ? 'Step 1: choose the machine or part and assign the PM tasks that apply to it.' : 'Step 2: give every assigned task its own trigger and cadence. One part can carry several tasks with different trigger types.'}
